@@ -1,0 +1,6 @@
+json5>=0.9.6
+pytz>=2019.1
+appdirs>=1.4.3
+setuptools>=41.0.0
+twine>=1.13.0
+wheel>=0.36.2

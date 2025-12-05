@@ -23,6 +23,7 @@ libs/
 pyenv/
 __pycache__/
 .venv/
-python*/
+
+
 
 .DS_Store
