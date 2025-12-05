@@ -1,0 +1,15 @@
+{
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  },
+  "gopls": {
+    "ui.diagnostic.analyses": {
+      "unusedparams": true
+    },
+    "experimentalWorkspaceModule": true,
+    "buildFlags": []
+  },
+  "files.exclude": {
+    "**/ios.go": true
+  }
+}

@@ -1,0 +1,7 @@
+*.log
+.dart_tool/
+build/**
+pubspec.lock
+
+!lib/assets/**
+!assets/**

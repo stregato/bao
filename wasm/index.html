@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bao WASM Demo</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 24px; }
+    h1 { margin-top: 0; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    input[type="text"], textarea { width: 100%; max-width: 600px; padding: 8px; font-family: inherit; }
+    textarea { min-height: 120px; }
+    button { padding: 8px 12px; }
+    .log { white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Bao WASM Demo</h1>
+  <p>This page loads the Go WASM module and exposes a tiny JS wrapper to exercise create/open, write/read, and list operations against a WebDAV/memory backend.</p>
+
+  <section class="grid">
+    <div>
+      <h2>Config</h2>
+      <div class="row">
+        <label>URL</label>
+        <input id="url" type="text" placeholder="davs://example.com/bao or mem://demo" />
+      </div>
+      <div class="row">
+        <label>Author (public id)</label>
+        <input id="author" type="text" placeholder="optional; leave empty for demo" />
+      </div>
+      <div class="row">
+        <button id="btn-create">Create</button>
+        <button id="btn-open">Open</button>
+      </div>
+    </div>
+
+    <div>
+      <h2>Read/Write</h2>
+      <div class="row">
+        <label>Path</label>
+        <input id="path" type="text" placeholder="/hello.txt" />
+      </div>
+      <div class="row">
+        <label>Group</label>
+        <input id="group" type="text" placeholder="public" value="public" />
+      </div>
+      <div class="row">
+        <label>Content</label>
+        <textarea id="content" placeholder="Type something to store...\n"></textarea>
+      </div>
+      <div class="row">
+        <button id="btn-write">Write</button>
+        <button id="btn-read">Read</button>
+        <button id="btn-list">List dir</button>
+      </div>
+    </div>
+  </section>
+
+  <h2>Log</h2>
+  <div id="log" class="log"></div>
+
+  <hr />
+  <section class="grid">
+    <div>
+      <h2>DB Config</h2>
+      <div class="row">
+        <label>Driver</label>
+        <input id="db-driver" type="text" placeholder="sqlite3 or mem" value="sqlite3" />
+      </div>
+      <div class="row">
+        <label>DB Path</label>
+        <input id="db-path" type="text" placeholder="myapp/main.sqlite (OPFS) or :memory:" value="myapp/main.sqlite" />
+      </div>
+      <div class="row">
+        <button id="btn-db-open">Open DB</button>
+      </div>
+    </div>
+
+    <div>
+      <h2>DB Query/Exec</h2>
+      <div class="row">
+        <label>Key/SQL</label>
+        <input id="db-key" type="text" placeholder="CREATE TABLE ... or SELECT ..." />
+      </div>
+      <div class="row">
+        <label>Args (JSON map)</label>
+        <input id="db-args" type="text" placeholder='{"name":"alice"}' />
+      </div>
+      <div class="row">
+        <label>Max Rows</label>
+        <input id="db-max" type="text" placeholder="100" value="100" />
+      </div>
+      <div class="row">
+        <button id="btn-db-exec">Exec</button>
+        <button id="btn-db-fetch">Fetch</button>
+        <button id="btn-db-one">Fetch One</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preload sqlite3; the worker will also importScripts this file. -->
+  <script src="sqlite3.js"></script>
+  <script src="../build/wasm/wasm_exec.js"></script>
+  <script src="main.js" type="module"></script>
+</body>
+</html>

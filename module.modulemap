@@ -1,0 +1,4 @@
+framework bao {
+  umbrella header "bao.h"
+  export *
+}

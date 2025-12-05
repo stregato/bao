@@ -1,0 +1,57 @@
+package bao
+
+import (
+	"github.com/dgryski/go-farm"
+	"github.com/stregato/bao/lib/core"
+	"github.com/stregato/bao/lib/security"
+	"github.com/stregato/bao/lib/sqlx"
+)
+
+func (s *Bao) getKeyIdForScope(group Scope) (keyId uint64, err error) {
+	switch {
+	case group == Public:
+		return 0, nil // Public group does not require a key
+	case len(group) >= 87:
+		return farm.Hash64([]byte(group)) | (1 << 63), nil
+	default:
+		// For groups shorter than 87 characters, we need to retrieve the key from the database
+		keyId, _, err := s.getLastKeyFromDB(group)
+		if err == sqlx.ErrNoRows {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, core.Errorw("cannot get key from DB in Bao.getKeyId, group %v", group, err)
+		}
+		return keyId, nil
+	}
+}
+
+func (s *Bao) encryptData(data []byte, group Scope) ([]byte, error) {
+
+	switch {
+	case group == Public:
+		// Public group does not require encryption
+		return data, nil
+	case len(group) >= 87:
+		// For longer groups, we use the keyId directly for encryption
+		crypted, err := security.EcEncrypt(security.PublicID(group), data)
+		if err != nil {
+			return nil, core.Errorw("cannot encrypt file head in encodeHead", err)
+		}
+		return crypted, nil
+	default:
+		keyId, key, err := s.getLastKeyFromDB(group)
+		if err == sqlx.ErrNoRows {
+			return nil, core.Errorw("access denied on group %s", group, err)
+		}
+		if err != nil {
+			return nil, core.Errorw("cannot get key from DB in Bao.getKeyId, group %v", group, err)
+		}
+		// For shorter groups, use AES encryption
+		crypted, err := security.EncryptAES(data, key)
+		if err != nil {
+			return nil, core.Errorw("cannot encrypt head in Bao.Write, name %v, group %v", name, group, err)
+		}
+		return crypted, nil
+	}
+}
