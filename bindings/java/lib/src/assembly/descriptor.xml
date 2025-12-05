@@ -1,0 +1,61 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+    <id>bin</id>
+    <formats>
+        <format>jar</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <fileSets>
+        <!-- Include the compiled Java classes -->
+        <fileSet>
+            <directory>${project.build.outputDirectory}</directory>
+            <outputDirectory>/</outputDirectory>
+        </fileSet>
+
+        <!-- Include native libraries for android_arm64 -->
+        <fileSet>
+            <directory>${basedir}/../../build/android_arm64</directory>
+            <outputDirectory>META-INF/lib/android_arm64</outputDirectory>
+            <includes>
+                <include>*.so</include>
+            </includes>
+        </fileSet>
+
+        <!-- Include native libraries for darwin_amd64 -->
+        <fileSet>
+            <directory>${basedir}/../../build/darwin_amd64</directory>
+            <outputDirectory>META-INF/lib/darwin_amd64</outputDirectory>
+            <includes>
+                <include>*.dylib</include>
+            </includes>
+        </fileSet>
+
+        <!-- Include native libraries for darwin_arm64 -->
+        <fileSet>
+            <directory>${basedir}/../../build/darwin_arm64</directory>
+            <outputDirectory>META-INF/lib/darwin_arm64</outputDirectory>
+            <includes>
+                <include>*.dylib</include>
+            </includes>
+        </fileSet>
+
+        <!-- Include native libraries for linux_amd64 -->
+        <fileSet>
+            <directory>${basedir}/../../build/linux_amd64</directory>
+            <outputDirectory>META-INF/lib/linux_amd64</outputDirectory>
+            <includes>
+                <include>*.so</include>
+            </includes>
+        </fileSet>
+
+        <!-- Include native libraries for windows_amd64 -->
+        <fileSet>
+            <directory>${basedir}/../../build/windows_amd64</directory>
+            <outputDirectory>META-INF/lib/windows_amd64</outputDirectory>
+            <includes>
+                <include>*.dll</include>
+            </includes>
+        </fileSet>
+    </fileSets>
+</assembly>

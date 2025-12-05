@@ -1,16 +1,16 @@
 {
 	"folders": [
 		{
-			"path": "../.."
+			"path": "../../.."
 		},
 		{
-			"path": "../../lib"
+			"path": "../../../lib"
 		},
 		{
 			"path": ".."
 		},
 		{
-			"path": "../../dart"
+			"path": "../../../bindings/dart"
 		}
 	],
 	"settings": {}

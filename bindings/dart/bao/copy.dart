@@ -2,7 +2,7 @@ import 'dart:io';
 
 void copyLibraries() {
   // Define source and destination directories
-  final sourceDir = Directory('../../build');
+  final sourceDir = Directory('../../../build');
   final destinationDir = Directory('lib/assets');
 
   // Check if source directory exists

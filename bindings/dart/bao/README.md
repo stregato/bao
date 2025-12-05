@@ -12,11 +12,11 @@ Alternatevely add _bao_ dependency in your pubspec.yaml file.
 
 The package only contains the dart source code. You still need to download the binary libraries (depending on the target architecture) from http://github.com/stregato/bao and copy to the subfolders for your architecture, i.e. _linux_, _ios_, _macos_, _android_, _windows_.
 
-The script http://github.com/stregato/bao/dart/install.sh automatically download the libraries and place them in the correct folder in your dart project. Folders for the target environments (e.g. macos, android) must be already in your project.
+The script http://github.com/stregato/bao/bindings/dart/install.sh automatically download the libraries and place them in the correct folder in your dart project. Folders for the target environments (e.g. macos, android) must be already in your project.
 You can run the script from the terminal at the folder where your dart project is with the Unix command
 
 ```sh
-bash <(wget -qO- https://raw.githubusercontent.com/stregato/repo/bao/dart/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/stregato/bao/main/bindings/dart/install.sh)
 ```
 
 

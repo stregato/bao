@@ -7,8 +7,8 @@ This repository hosts the cross-platform **Bao** secure storage engine, its Go c
 | Path | Purpose |
 |------|---------|
 | `lib/` | Go implementation of the bao engine, cryptography helpers, storage backends, SQL layer, and CGO exports (see §2). |
-| `py/` | Python package (`pbao`) that loads the compiled library via `ctypes` and exposes an idiomatic API (see §3.1). |
-| `dart/` | Flutter/Dart bindings that mirror the Go API via FFI (see §3.2). |
+| `bindings/py/` | Python package (`pbao`) that loads the compiled library via `ctypes` and exposes an idiomatic API (see §3.1). |
+| `bindings/dart/` | Flutter/Dart bindings that mirror the Go API via FFI (see §3.2). |
 | `wasm/` + `lib/jsdemo/` | WASM demo that builds the Go code for the browser and exposes JS shims (see §3.3). |
 | `build/` | Output artifacts (shared libraries, WASM binaries, xcframework). Built by the Makefile. |
 | `module.modulemap` | Allows Swift/Objective-C consumers to import the generated xcframework. |
@@ -59,19 +59,19 @@ Detailed package-level notes are in `lib/README.md`; here are the foundational i
 
 ## 3. Bindings & SDKs
 
-### 3.1 Python (`py/`)
-- `pbao` loads the correct shared library by inspecting platform/architecture (`py/pbao/baod.py:1-53`) and defines the `Result`/`Data` structs that mirror `C.Result`/`C.Data` from `lib/export.go`.
-- Function signatures are declared in `py/pbao/baob.py:1-74`; they match the CGO exports, and `consume` (`py/pbao/baob.py:77-99`) converts returned JSON blobs or raw bytes while freeing memory via the Go-provided `free` symbol.
-- The high-level API lives in `py/pbao/bao.py:75-200`, where `Bao.create/open` wrap `bao_create`/`bao_open`, `write_file` and `read_file` map to the Go IO pipeline, and helpers like `sqlLayer` or `send/receive` expose SQL replication and mailbox features.
-- Tests/scripts can call `newPrivateID` (`py/pbao/bao.py:24-30`) to generate credentials and manipulate groups via `set_access` (`py/pbao/bao.py:115-122`).
-- `py/build.sh:1-55` iterates over the compiled artifacts in `../build/*`, copies the right `.so/.dylib/.dll` into `pbao/_libs`, and runs `setup.py bdist_wheel` with platform-specific tags. Running `make py` ensures Go libraries exist before packaging.
+### 3.1 Python (`bindings/py/`)
+- `pbao` loads the correct shared library by inspecting platform/architecture (`bindings/py/pbao/baod.py:1-53`) and defines the `Result`/`Data` structs that mirror `C.Result`/`C.Data` from `lib/export.go`.
+- Function signatures are declared in `bindings/py/pbao/baob.py:1-74`; they match the CGO exports, and `consume` (`bindings/py/pbao/baob.py:77-99`) converts returned JSON blobs or raw bytes while freeing memory via the Go-provided `free` symbol.
+- The high-level API lives in `bindings/py/pbao/bao.py:75-200`, where `Bao.create/open` wrap `bao_create`/`bao_open`, `write_file` and `read_file` map to the Go IO pipeline, and helpers like `sqlLayer` or `send/receive` expose SQL replication and mailbox features.
+- Tests/scripts can call `newPrivateID` (`bindings/py/pbao/bao.py:24-30`) to generate credentials and manipulate groups via `set_access` (`bindings/py/pbao/bao.py:115-122`).
+- `bindings/py/build.sh:1-55` iterates over the compiled artifacts in `../build/*`, copies the right `.so/.dylib/.dll` into `pbao/_libs`, and runs `setup.py bdist_wheel` with platform-specific tags. Running `make py` ensures Go libraries exist before packaging.
 
-### 3.2 Dart / Flutter (`dart/bao`)
-- `initBaoLibrary` (see `dart/bao/lib/src/loader.dart:1-120`) locates platform-specific binaries (downloaded via `dart/install.sh:1-79` or produced locally) and exposes a `Result` object with automatic JSON decoding and error propagation based on the Go `wrappedError` payloads.
-- `bindings.dart` (`dart/bao/lib/src/bindings.dart:1-120`) maps Dart method names to native symbols (e.g., `bao_setAccess`, `baoql_sync_tables`, `mailbox_receive`), performs argument marshaling (UTF-8 strings, JSON blobs, raw buffers), and keeps a list of allocated pointers to free after each call.
-- The public API in `dart/bao/lib/src/bao.dart:17-120` mirrors the Go `Bao`: `Bao.create`/`open`, `setAccess`, `waitFiles`, `sync`, etc. Constants like `users`, `admins`, and `asyncOperation` match the Go enum values.
-- `dart/bao/test/bao_test.dart:6-49` covers typical flows (creating a bao, granting access, writing a file, awaiting `waitFiles`), ensuring bindings stay in sync whenever the Go layer changes.
-- Distribution scripts (`dart/install.sh`, `dart/publish.sh`) download the newest release assets, copy them into Flutter platform folders (`macos/Libraries`, `ios/Libraries`, etc.), and publish the package via `dart pub publish`.
+### 3.2 Dart / Flutter (`bindings/dart/bao`)
+- `initBaoLibrary` (see `bindings/dart/bao/lib/src/loader.dart:1-120`) locates platform-specific binaries (downloaded via `bindings/dart/install.sh:1-79` or produced locally) and exposes a `Result` object with automatic JSON decoding and error propagation based on the Go `wrappedError` payloads.
+- `bindings.dart` (`bindings/dart/bao/lib/src/bindings.dart:1-120`) maps Dart method names to native symbols (e.g., `bao_setAccess`, `baoql_sync_tables`, `mailbox_receive`), performs argument marshaling (UTF-8 strings, JSON blobs, raw buffers), and keeps a list of allocated pointers to free after each call.
+- The public API in `bindings/dart/bao/lib/src/bao.dart:17-120` mirrors the Go `Bao`: `Bao.create`/`open`, `setAccess`, `waitFiles`, `sync`, etc. Constants like `users`, `admins`, and `asyncOperation` match the Go enum values.
+- `bindings/dart/bao/test/bao_test.dart:6-49` covers typical flows (creating a bao, granting access, writing a file, awaiting `waitFiles`), ensuring bindings stay in sync whenever the Go layer changes.
+- Distribution scripts (`bindings/dart/install.sh`, `bindings/dart/publish.sh`) download the newest release assets, copy them into Flutter platform folders (`macos/Libraries`, `ios/Libraries`, etc.), and publish the package via `dart pub publish`.
 
 ### 3.3 Browser/WASM (`wasm/` + `lib/jsdemo/`)
 - `lib/jsdemo/main_js.go:1-105` builds the Go library with `//go:build js`, registers promise-returning JS functions (`baoCreate`, `baoOpen`, `baoWrite`, `baoRead`, `baoList`), and demonstrates using the in-memory SQL engine for demo purposes.
@@ -92,22 +92,22 @@ Detailed package-level notes are in `lib/README.md`; here are the foundational i
   - `lib/bao/write_test.go:9-115` verifies staged writes, async reads, attribute propagation, and `WaitFiles` semantics.
   - `lib/bao/sync_test.go:9-60` ensures multi-user sync loads new files exactly once.
   - `lib/storage/storage_test.go:26-147` exercises the local backend (create dirs, write/read/delete files, list filters), and optionally S3/WebDAV when credentials are available.
-- **Binding tests:** `dart/bao/test/bao_test.dart:6-49` runs in Flutter/Dart to validate the FFI surface. Python relies on integration notebooks/scripts in `py/jupyter` plus the same Go tests because Python is a thin wrapper around the CGO API.
+- **Binding tests:** `bindings/dart/bao/test/bao_test.dart:6-49` runs in Flutter/Dart to validate the FFI surface. Python relies on integration notebooks/scripts in `bindings/py/jupyter` plus the same Go tests because Python is a thin wrapper around the CGO API.
 - **WASM smoke tests:** Open `wasm/index.html` after `make web` to manually verify create/write/read/list plus DB commands via the UI.
 
 ## 6. Typical workflow
 
-1. **Generate credentials:** Call `security.NewPrivateIDMust()` (`lib/security/identity.go:57`) or, from Python/Dart, `newPrivateID()` (`py/pbao/bao.py:24-30`) / `newPrivateID()` in Dart (see `dart/bao/lib/src/identity.dart`).
-2. **Open a DB:** Use `sqlx.Open` or a binding equivalent (`py/pbao/bao.py:38-46` / `dart/bao/lib/src/db.dart`).
+1. **Generate credentials:** Call `security.NewPrivateIDMust()` (`lib/security/identity.go:57`) or, from Python/Dart, `newPrivateID()` (`bindings/py/pbao/bao.py:24-30`) / `newPrivateID()` in Dart (see `bindings/dart/bao/lib/src/identity.dart`).
+2. **Open a DB:** Use `sqlx.Open` or a binding equivalent (`bindings/py/pbao/bao.py:38-46` / `bindings/dart/bao/lib/src/db.dart`).
 3. **Create a bao:** `bao.Create` (`lib/bao/create.go:19-82`) or `Bao.create` in Python/Dart, supplying the storage URL (e.g., `file:///…`, `s3://…`).
-4. **Grant access:** `SyncAccess` (`lib/bao/access.go:14-180`) takes one or more `AccessChange` entries and stages the necessary blockchain records; bindings still expose `set_access` (`py/pbao/bao.py:115-122`) and `setAccess` (`dart/bao/lib/src/bao.dart:79-102`). Tests assert that ACLs stick (`dart/bao/test/bao_test.dart:12-27`).
-5. **Write & read data:** `s.Write` (`lib/bao/write.go:170-198`) / `write_file` (`py/pbao/bao.py:158-164`) / `Bao.write` (`dart/bao/lib/src/bao.dart:138-157`), then `WaitFiles` and `Read`/`read_file`. The Go tests demonstrate verifying file metadata and contents.
+4. **Grant access:** `SyncAccess` (`lib/bao/access.go:14-180`) takes one or more `AccessChange` entries and stages the necessary blockchain records; bindings still expose `set_access` (`bindings/py/pbao/bao.py:115-122`) and `setAccess` (`bindings/dart/bao/lib/src/bao.dart:79-102`). Tests assert that ACLs stick (`bindings/dart/bao/test/bao_test.dart:12-27`).
+5. **Write & read data:** `s.Write` (`lib/bao/write.go:170-198`) / `write_file` (`bindings/py/pbao/bao.py:158-164`) / `Bao.write` (`bindings/dart/bao/lib/src/bao.dart:138-157`), then `WaitFiles` and `Read`/`read_file`. The Go tests demonstrate verifying file metadata and contents.
 6. **Sync & housekeeping:** Either rely on `startHousekeeping` (spawned in `Create`/`Open`) or call `Bao.Sync` manually (`lib/bao/sync.go:17-43`). Python offers `read_dir`, `sync`, and `set_retention`, while Dart uses `waitFiles` and `sync`.
-7. **Use advanced features:** Start a SQL layer via `bao_sqlLayer` (`lib/export.go:620+`, consumed by `py/pbao/bao.py:180-186`), or exchange messages via `bao_send`/`bao_receive` exported in `lib/mailbox/mailbox.go:23-81`.
+7. **Use advanced features:** Start a SQL layer via `bao_sqlLayer` (`lib/export.go:620+`, consumed by `bindings/py/pbao/bao.py:180-186`), or exchange messages via `bao_send`/`bao_receive` exported in `lib/mailbox/mailbox.go:23-81`.
 
 ## 7. Licenses & contributions
 
 - Dual-licensed under AGPL-3.0 and a commercial license (`LICENSE:1-11`). Contributing implies dual licensing.
-- Each binding (`py/`, `dart/`) includes its own license/README; ensure redistribution follows both AGPL requirements and platform store policies.
+- Each binding (`bindings/py/`, `bindings/dart/`) includes its own license/README; ensure redistribution follows both AGPL requirements and platform store policies.
 
-For deeper Go API details, refer to `lib/README.md`. For questions about bindings or build outputs, the scripts in `py/`, `dart/`, and `wasm/` provide the authoritative reference implementations.
+For deeper Go API details, refer to `lib/README.md`. For questions about bindings or build outputs, the scripts in `bindings/py/`, `bindings/dart/`, and `wasm/` provide the authoritative reference implementations.

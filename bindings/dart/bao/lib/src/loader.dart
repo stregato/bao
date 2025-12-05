@@ -331,7 +331,7 @@ var _libraryPaths = {
   'macos-amd64': ['libbao_amd64.dylib'],
   'macos-arm64': [
     'libbao_arm64.dylib',
-    '../../build/darwin/libbao_arm64.dylib'
+    '../../../build/darwin/libbao_arm64.dylib'
   ],
   'windows-amd64': ['baod.dll'],
 };

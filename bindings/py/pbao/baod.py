@@ -41,11 +41,11 @@ def load_lib():
     name = "bao" if os_name == "windows" else "libbao"
     name = f"{name}_{arch}{ext}"
 
-    # Search for the library in the _libs folder or in the ../../build/architecture folder
+    # Search for the library in the _libs folder or in the ../../../build/architecture folder
     package_dir = os.path.dirname(os.path.abspath(__file__))
     search_paths = [
         os.path.abspath(os.path.join(package_dir, '_libs', name)),
-        os.path.abspath(os.path.join(package_dir, f'../../build/{os_name}', name))
+        os.path.abspath(os.path.join(package_dir, f'../../../build/{os_name}', name))
     ]
 
     # Find the library in the specified paths

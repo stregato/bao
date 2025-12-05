@@ -134,20 +134,20 @@ magpie:
 
 py: lib
 	echo "Building Python bindings"
-	cd ./py && ./build.sh
+	cd ./bindings/py && ./build.sh
 
 java: lib
 	echo "Building Java bindings"
-	cd ./java && mvn clean install
+	cd ./bindings/java && mvn clean install
 
 dart: lib
 	echo "Building Dart bindings"
-	cd ./dart && ./build.sh
+	cd ./bindings/dart && ./build.sh
 
 clean:
 	echo "Cleaning up"
 	rm -rf $(BUILD_PATH)
-	rm -rf py/pbao/_libs
+	rm -rf bindings/py/pbao/_libs
 
 release:
 	@read -p "Enter the release name: " release_name; \
