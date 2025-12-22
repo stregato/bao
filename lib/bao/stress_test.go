@@ -14,7 +14,7 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
-	"gopkg.in/yaml.v2"
+	"github.com/stregato/bao/lib/storage"
 )
 
 const stressDefaultStoreURLLabel = "s3"
@@ -22,12 +22,12 @@ const stressDefaultStoreURLLabel = "s3"
 func newStressTestStash(t *testing.T, cfg Config) (*Bao, *sqlx.DB) {
 	t.Helper()
 
-	db := sqlx.NewTestDB(t, "stash.db", "")
+	db := sqlx.NewTestDB(t, "vault.db", "")
 
-	storeURL := loadStoreURL(t, stressDefaultStoreURLLabel)
+	storeConfig := storage.LoadTestConfig(t, stressDefaultStoreURLLabel)
 
 	owner := security.NewPrivateIDMust()
-	s, err := Create(db, owner, storeURL, cfg)
+	s, err := Create(db, owner, storeConfig, cfg)
 	core.TestErr(t, err, "Create failed: %v")
 
 	t.Cleanup(func() {
@@ -86,7 +86,7 @@ func TestConcurrentWritesStress(t *testing.T) {
 	cfg := Config{
 		SegmentInterval: 2 * time.Minute,
 	}
-	stash, _ := newStressTestStash(t, cfg)
+	vault, _ := newStressTestStash(t, cfg)
 
 	const (
 		writers          = 12
@@ -102,7 +102,7 @@ func TestConcurrentWritesStress(t *testing.T) {
 	ids := make([]FileId, 0, writers*filesPerWriter)
 	errCh := make(chan error, writers*filesPerWriter)
 
-	t.Logf("starting concurrent write stress: writers=%d filesPerWriter=%d payloadRange=[%d,%d) url=%s label=%s", writers, filesPerWriter, payloadBaseSize, payloadBaseSize+payloadSizeRange, stash.Url, stressDefaultStoreURLLabel)
+	t.Logf("starting concurrent write stress: writers=%d filesPerWriter=%d payloadRange=[%d,%d) label=%s", writers, filesPerWriter, payloadBaseSize, payloadBaseSize+payloadSizeRange, stressDefaultStoreURLLabel)
 	writeStart := time.Now()
 
 	for w := 0; w < writers; w++ {
@@ -114,7 +114,7 @@ func TestConcurrentWritesStress(t *testing.T) {
 				payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, writer, i)
 				totalWritten.Add(int64(payloadSize))
 				src := makePayload(t, sourceDir, fmt.Sprintf("src-%02d-%03d", writer, i), payloadSize)
-				file, err := stash.Write(name, src, Admins, nil, AsyncOperation, nil)
+				file, err := vault.Write(name, src, Admins, nil, AsyncOperation, nil)
 				if err != nil {
 					errCh <- err
 					return
@@ -132,23 +132,23 @@ func TestConcurrentWritesStress(t *testing.T) {
 		core.TestErr(t, err, "Write failed: %v")
 	}
 
-	core.TestErr(t, stash.WaitFiles(ids...), "WaitFiles failed: %v")
+	core.TestErr(t, vault.WaitFiles(ids...), "WaitFiles failed: %v")
 	writeDur := time.Since(writeStart)
 
-	files, err := statsFromReadDir(t, stash, "")
+	files, err := statsFromReadDir(t, vault, "")
 	core.TestErr(t, err, "ReadDir failed: %v")
 	core.Assert(t, len(files) == writers*filesPerWriter, "expected %d files, got %d", writers*filesPerWriter, len(files))
 
-	expectedAllocated, err := stash.calculateAllocatedSize()
+	expectedAllocated, err := vault.calculateAllocatedSize()
 	core.TestErr(t, err, "calculateAllocatedSize failed: %v")
-	core.Assert(t, stash.AllocatedSize() == expectedAllocated, "AllocatedSize mismatch: have %d want %d", stash.AllocatedSize(), expectedAllocated)
+	core.Assert(t, vault.AllocatedSize() == expectedAllocated, "AllocatedSize mismatch: have %d want %d", vault.AllocatedSize(), expectedAllocated)
 
 	t.Logf("concurrent write stress done in %s, wrote %d files, %.2f MB (%.2f MB/s)", writeDur, len(files), bytesToMB(totalWritten.Load()), mbPerSec(totalWritten.Load(), writeDur))
 }
 
 func TestConcurrentReadWriteStress(t *testing.T) {
 	cfg := Config{SegmentInterval: 2 * time.Minute}
-	stash, _ := newStressTestStash(t, cfg)
+	vault, _ := newStressTestStash(t, cfg)
 
 	const (
 		baseFiles        = 40
@@ -168,12 +168,12 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 		payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, i)
 		src := makePayload(t, sourceDir, fmt.Sprintf("init-%03d", i), payloadSize)
 		initWritten.Add(int64(payloadSize))
-		_, err := stash.Write(name, src, Admins, nil, 0, nil)
+		_, err := vault.Write(name, src, Admins, nil, 0, nil)
 		core.TestErr(t, err, "initial write failed: %v")
 		names[i] = name
 	}
-	core.TestErr(t, stash.WaitFiles(), "initial WaitFiles failed: %v")
-	t.Logf("initialized mixed workload: baseFiles=%d payloadRange=[%d,%d) initWritten=%.2f MB url=%s label=%s", baseFiles, payloadBaseSize, payloadBaseSize+payloadSizeRange, bytesToMB(initWritten.Load()), stash.Url, stressDefaultStoreURLLabel)
+	core.TestErr(t, vault.WaitFiles(), "initial WaitFiles failed: %v")
+	t.Logf("initialized mixed workload: baseFiles=%d payloadRange=[%d,%d) initWritten=%.2f MB ", baseFiles, payloadBaseSize, payloadBaseSize+payloadSizeRange, bytesToMB(initWritten.Load()))
 
 	writerWG := sync.WaitGroup{}
 	readerWG := sync.WaitGroup{}
@@ -195,7 +195,7 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 				payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, idx, i)
 				totalWritten.Add(int64(payloadSize))
 				src := makePayload(t, sourceDir, fmt.Sprintf("writer-%02d-%03d", idx, i), payloadSize)
-				file, err := stash.Write(name, src, Admins, nil, AsyncOperation, nil)
+				file, err := vault.Write(name, src, Admins, nil, AsyncOperation, nil)
 				if err != nil {
 					writeErrCh <- err
 					return
@@ -217,7 +217,7 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 			for i := 0; i < iterations; i++ {
 				name := names[(idx*iterations+i)%len(names)]
 				dest := filepath.Join(readerTmp, fmt.Sprintf("read-%02d-%03d", idx, i))
-				file, err := stash.Read(name, dest, 0, nil)
+				file, err := vault.Read(name, dest, 0, nil)
 				if err != nil {
 					readErrCh <- err
 					return
@@ -251,13 +251,13 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 	core.Assert(t, readSuccess.Load() == int64(readerCount*iterations), "unexpected read success count: %d", readSuccess.Load())
 
 	if len(writeIDs) > 0 {
-		core.TestErr(t, stash.WaitFiles(writeIDs...), "WaitFiles for concurrent writes failed: %v")
+		core.TestErr(t, vault.WaitFiles(writeIDs...), "WaitFiles for concurrent writes failed: %v")
 	} else {
-		core.TestErr(t, stash.WaitFiles(), "WaitFiles for concurrent writes failed: %v")
+		core.TestErr(t, vault.WaitFiles(), "WaitFiles for concurrent writes failed: %v")
 	}
 	runDur := time.Since(runStart)
 
-	files, err := statsFromReadDir(t, stash, "")
+	files, err := statsFromReadDir(t, vault, "")
 	core.TestErr(t, err, "ReadDir after mixed load failed: %v")
 	core.Assert(t, len(files) == baseFiles, "expected %d files after mixed load, got %d", baseFiles, len(files))
 
@@ -270,19 +270,15 @@ func TestRetentionCleanupStress(t *testing.T) {
 		Retention:       2 * time.Hour,
 		SegmentInterval: 2 * time.Minute,
 	}
-	stash, db := newStressTestStash(t, cfg)
-
-	if !strings.HasPrefix(stash.Url, "file://") {
-		t.Skip("Retention stress test requires file:// store URL")
-	}
-
+	vault, db := newStressTestStash(t, cfg)
 	const (
 		totalFiles = 24
 		payload    = 512
 	)
-
 	sourceDir := t.TempDir()
-	baseStorePath := fileStoreRoot(stash.Url)
+
+	c := storage.LoadTestConfig(t, "test")
+	baseStorePath := fileStoreRoot(c.Local.Base)
 
 	type fileInfo struct {
 		id        FileId
@@ -295,13 +291,13 @@ func TestRetentionCleanupStress(t *testing.T) {
 	for i := 0; i < totalFiles; i++ {
 		name := fmt.Sprintf("retain-%03d.dat", i)
 		src := makePayload(t, sourceDir, fmt.Sprintf("retain-src-%03d", i), payload)
-		file, err := stash.Write(name, src, Admins, nil, 0, nil)
+		file, err := vault.Write(name, src, Admins, nil, 0, nil)
 		core.TestErr(t, err, "initial retention write failed: %v")
 		infos = append(infos, fileInfo{id: file.Id, storeDir: file.StoreDir, storeName: file.StoreName, name: name})
 	}
-	core.TestErr(t, stash.WaitFiles(), "WaitFiles failed for retention setup: %v")
+	core.TestErr(t, vault.WaitFiles(), "WaitFiles failed for retention setup: %v")
 
-	retentionThreshold := core.Now().Add(-stash.Config.Retention).Add(-1 * time.Hour)
+	retentionThreshold := core.Now().Add(-vault.Config.Retention).Add(-1 * time.Hour)
 	oldStoreTS := retentionThreshold.Add(-1 * time.Hour).UTC().Format("20060102150405")
 	oldStoreDir := filepath.Join(DataFolder, string(Admins), oldStoreTS)
 	oldDirPath := filepath.Join(baseStorePath, oldStoreDir)
@@ -320,7 +316,7 @@ func TestRetentionCleanupStress(t *testing.T) {
 
 		oldMod := retentionThreshold.Add(-time.Hour).UnixMilli()
 		_, err := db.Exec("SQL:UPDATE files SET storeDir = :storeDir, modTime = :modTime WHERE store = :store AND id = :id", sqlx.Args{
-			"store":    stash.Id,
+			"store":    vault.Id,
 			"storeDir": oldStoreDir,
 			"modTime":  oldMod,
 			"id":       info.id,
@@ -328,9 +324,9 @@ func TestRetentionCleanupStress(t *testing.T) {
 		core.TestErr(t, err, "update old file metadata failed: %v")
 	}
 
-	stash.retentionCleanup()
+	vault.retentionCleanup()
 
-	files, err := statsFromReadDir(t, stash, "")
+	files, err := statsFromReadDir(t, vault, "")
 	core.TestErr(t, err, "ReadDir after retention cleanup failed: %v")
 	core.Assert(t, len(files) == totalFiles-oldCount, "expected %d files after cleanup, got %d", totalFiles-oldCount, len(files))
 
@@ -339,13 +335,13 @@ func TestRetentionCleanupStress(t *testing.T) {
 	}
 
 	var countRow int
-	row := db.Engine.QueryRow("SELECT COUNT(*) FROM files WHERE store = ?", stash.Id)
+	row := db.Engine.QueryRow("SELECT COUNT(*) FROM files WHERE store = ?", vault.Id)
 	core.TestErr(t, row.Scan(&countRow), "count remaining files failed: %v")
 	core.Assert(t, countRow == totalFiles-oldCount, "expected %d rows in files table, got %d", totalFiles-oldCount, countRow)
 
-	dbAllocated, err := stash.calculateAllocatedSize()
+	dbAllocated, err := vault.calculateAllocatedSize()
 	core.TestErr(t, err, "calculateAllocatedSize failed")
-	core.Assert(t, stash.AllocatedSize() == dbAllocated, "allocated size mismatch: %d vs %d", stash.AllocatedSize(), dbAllocated)
+	core.Assert(t, vault.AllocatedSize() == dbAllocated, "allocated size mismatch: %d vs %d", vault.AllocatedSize(), dbAllocated)
 }
 
 func fileStoreRoot(url string) string {
@@ -354,31 +350,4 @@ func fileStoreRoot(url string) string {
 		root = root[1:]
 	}
 	return root
-}
-
-func loadStoreURL(t *testing.T, label string) string {
-	t.Helper()
-
-	_, caller, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatalf("unable to determine caller information for store URL lookup")
-	}
-
-	urlFile := filepath.Join(filepath.Dir(caller), "..", "..", "credentials", "urls.yaml")
-	data, err := os.ReadFile(urlFile)
-	if err != nil {
-		t.Fatalf("failed to read store URLs from %s: %v", urlFile, err)
-	}
-
-	urls := map[string]string{}
-	if err := yaml.Unmarshal(data, &urls); err != nil {
-		t.Fatalf("failed to parse store URLs in %s: %v", urlFile, err)
-	}
-
-	url, ok := urls[label]
-	if !ok || strings.TrimSpace(url) == "" {
-		t.Fatalf("store URL for label %q not found in %s", label, urlFile)
-	}
-
-	return url
 }

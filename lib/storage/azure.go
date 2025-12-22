@@ -24,36 +24,49 @@ import (
 // Share       string
 
 type Azure struct {
-	p   pipeline.Pipeline
-	id  string
-	dir string
+	p       pipeline.Pipeline
+	id      string
+	dir     string
+	baseURL *url.URL
+}
+
+type AzureConfig struct {
+	AccountName string `json:"accountName"`
+	AccountKey  string `json:"accountKey"`
+	Share       string `json:"share"`
+	BasePath    string `json:"basePath"`
+	Verbose     int    `json:"verbose"`
 }
 
 // OpenAzure create a new Exchanger. The url is in the format azure://accountname.file.core.windows.net/share/basepath?a=accountname&k=accountkey
-func OpenAzure(connectionUrl string) (Store, error) {
-	u, err := url.Parse(connectionUrl)
-	if core.IsErr(err, "invalid url '%s': %v", connectionUrl) {
-		return nil, err
+func OpenAzure(id string, c AzureConfig) (Store, error) {
+	if c.Share == "" {
+		return nil, core.Errorw("azure share is missing for %s", id)
 	}
 
-	q := u.Query()
-	accountName := q.Get("a")
-	accountKey := q.Get("k")
-
-	dir := strings.TrimLeft(u.Path, "/")
-	repr := fmt.Sprintf("azure://%s/%s", u.Host, dir)
-
-	credential, err := azfile.NewSharedKeyCredential(accountName, accountKey)
+	endpoint := fmt.Sprintf("https://%s.file.core.windows.net", c.AccountName)
+	baseURL, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, core.Errorw("cannot create Azure credential for %s", repr, err)
+		return nil, core.Errorw("invalid azure endpoint %s", endpoint, err)
+	}
+
+	dir := c.Share
+	if bp := strings.TrimLeft(c.BasePath, "/"); bp != "" {
+		dir = path.Join(c.Share, bp)
+	}
+
+	credential, err := azfile.NewSharedKeyCredential(c.AccountName, c.AccountKey)
+	if err != nil {
+		return nil, core.Errorw("cannot create Azure credential for %s", id, err)
 	}
 
 	p := azfile.NewPipeline(credential, azfile.PipelineOptions{})
 
 	a := &Azure{
-		p:   p,
-		id:  repr,
-		dir: dir,
+		p:       p,
+		id:      id,
+		dir:     dir,
+		baseURL: baseURL,
 	}
 	return a, nil
 }
@@ -90,18 +103,16 @@ func (a *Azure) MkdirAll(name string) error {
 }
 
 func (a *Azure) getFileUrl(name string) (azfile.FileURL, error) {
-	u, err := url.Parse(fmt.Sprintf("%s/%s", a.dir, name))
-	if err != nil {
-		return azfile.FileURL{}, err
-	}
+	relPath := path.Join(a.dir, name)
+	rel := &url.URL{Path: relPath}
+	u := a.baseURL.ResolveReference(rel)
 	return azfile.NewFileURL(*u, a.p), nil
 }
 
 func (a *Azure) getDirectoryUrl(name string) (azfile.DirectoryURL, error) {
-	u, err := url.Parse(fmt.Sprintf("%s/%s", a.dir, name))
-	if err != nil {
-		return azfile.DirectoryURL{}, err
-	}
+	relPath := path.Join(a.dir, name)
+	rel := &url.URL{Path: relPath}
+	u := a.baseURL.ResolveReference(rel)
 	return azfile.NewDirectoryURL(*u, a.p), nil
 }
 
@@ -226,7 +237,6 @@ func (a *Azure) Stat(name string) (fs.FileInfo, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	name = path.Join(a.dir, name)
 	fileUrl, err := a.getFileUrl(name)
 	if err != nil {
 		return nil, err

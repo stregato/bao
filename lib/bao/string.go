@@ -19,7 +19,7 @@ func (s *Bao) MarshalYAML() (any, error) {
 
 	return map[string]any{
 		"id":       s.Id,
-		"url":      s.Url,
+		"url":      s.StoreConfig,
 		"storeId":  s.Id,
 		"author":   s.Author,
 		"config":   s.Config,

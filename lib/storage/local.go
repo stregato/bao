@@ -23,7 +23,7 @@ type Local struct {
 	touch map[string]time.Time
 }
 
-func OpenLocal(connectionUrl string) (Store, error) {
+func OpenLocal(id string, connectionUrl string) (Store, error) {
 	core.Start("Opening local storage with URL: %s", connectionUrl)
 	u, err := url.Parse(connectionUrl)
 	if err != nil {

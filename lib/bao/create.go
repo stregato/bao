@@ -17,8 +17,8 @@ import (
 var ddl1_0 string
 
 // Create creates a new Bao instance.
-func Create(db *sqlx.DB, user security.PrivateID, storeUrl string, config Config) (*Bao, error) {
-	core.Start("creating stash for url %s", storeUrl)
+func Create(db *sqlx.DB, user security.PrivateID, StoreManifest storage.StoreConfig, config Config) (*Bao, error) {
+	core.Start("creating vault for url %s", StoreManifest.Id)
 	err := db.Define(ddl1_0)
 	if err != nil {
 		return nil, core.Errorw("Cannot define SQLite db in %s", db.DbPath, err)
@@ -26,28 +26,28 @@ func Create(db *sqlx.DB, user security.PrivateID, storeUrl string, config Config
 
 	publicId, err := user.PublicID()
 	if err != nil {
-		return nil, core.Errorw("invalid private while creating stash for url %s", storeUrl, err)
+		return nil, core.Errorw("invalid private while creating vault for url %s", StoreManifest.Id, err)
 	}
 
-	store, err := storage.Open(storeUrl)
+	store, err := storage.Open(StoreManifest)
 	if err != nil {
-		return nil, core.Errorw("cannot open store while creating stash for url %s", storeUrl, err)
+		return nil, core.Errorw("cannot open store while creating vault for url %s", StoreManifest.Id, err)
 	}
 
 	err = wipeData(store)
 	if err != nil {
-		return nil, core.Errorw("cannot wipe data in store %s", storeUrl, err)
+		return nil, core.Errorw("cannot wipe data in store %s", StoreManifest.Id, err)
 	}
 	publicIdHash := core.Int64Hash(publicId.Bytes())
 	ioThrottle := core.DefaultIfZero(config.IoThrottle, 10) // Default to 10 concurrent I/O operations
 
 	s := Bao{
-		Id:               core.StringHash(append([]byte(storeUrl), publicId.Bytes()...)),
+		Id:               StoreManifest.Id,
 		UserId:           user,
 		UserPublicId:     publicId,
 		UserPublicIdHash: publicIdHash,
 		Author:           publicId,
-		Url:              storeUrl,
+		StoreConfig:      StoreManifest,
 		DB:               db,
 		Config:           config,
 		store:            store,
@@ -60,16 +60,16 @@ func Create(db *sqlx.DB, user security.PrivateID, storeUrl string, config Config
 
 	bc, err := marshalChange(&config)
 	if err != nil {
-		return nil, core.Errorw("cannot marshal config change for stash %s", storeUrl, err)
+		return nil, core.Errorw("cannot marshal config change for vault %s", StoreManifest.Id, err)
 	}
 	err = s.stageBlockChange(bc)
 	if err != nil {
-		return nil, core.Errorw("cannot stage config change for stash %s", storeUrl, err)
+		return nil, core.Errorw("cannot stage config change for vault %s", StoreManifest.Id, err)
 	}
 
 	err = s.SyncAccess(0, AccessChange{Group: Admins, Access: ReadWrite, UserId: user.PublicIDMust()})
 	if err != nil {
-		return nil, core.Errorw("cannot set access for stash %s", storeUrl, err)
+		return nil, core.Errorw("cannot set access for vault %s", StoreManifest.Id, err)
 	}
 
 	go s.startHousekeeping()
@@ -77,7 +77,7 @@ func Create(db *sqlx.DB, user security.PrivateID, storeUrl string, config Config
 	openedStashes = append(openedStashes, &s)
 	openedStashesMu.Unlock()
 
-	core.Info("Successfully created Bao instance for url %s: %s", storeUrl, s.String())
+	core.Info("Successfully created Bao instance for url %s: %s", StoreManifest.Id, s.String())
 	return &s, nil
 }
 

@@ -22,33 +22,41 @@ bash <(wget -qO- https://raw.githubusercontent.com/stregato/bao/main/bindings/da
 
 ## Usage
 
-
 ```dart
-    loabaoLibrary();
-    
-    var i = Identity('Admin');
-    var db = DB.defaultDB();
+import 'dart:typed_data';
+import 'package:bao/bao.dart';
+import 'package:bao/src/bindings.dart' show bindings;
 
-    var url = 'file:///tmp/${i.id}/sample';
-    var s = Safe.create(db, i, url);
+Future<void> main() async {
+  // Spin up the worker isolates and load the native library.
+  await bindings.start();
 
-    var groups = s.getGroups();
-    expect(groups, isNotNull);
+  final db = await DB.defaultDB();
+  final privateId = newPrivateID();
+  final publicId = publicID(privateId);
+  final url = 'file:///tmp/$publicId/sample';
+  final storeConfig = StoreConfig.fromLocalUrl(url);
 
-    var alice = Identity('Alice');
-    groups = s.updateGroup('usr', Safe.grant, [alice.id]);
-    expect(groups['usr']?.contains(alice.id), true);
+  // Create a new bao
+  final b = await Bao.create(db, privateId, storeConfig);
 
-    groups = s.getGroups();
-    expect(groups['usr']?.contains(alice.id), true);
+  // Grant yourself read/write access
+  await b.syncAccess([AccessChange(users, accessReadWrite, publicId)]);
 
-    var keys = s.getKeys('usr');
-    expect(keys, isNotNull);
+  // Write a file (attrs is optional metadata as bytes)
+  await b.write('hello.txt', users, Uint8List(0), '/path/to/local/file.txt', 0);
 
-    s.close();
-    db.close();
+  // List files
+  final files = await b.readDir('', limit: 10);
+  for (final f in files) {
+    print('${f.name} (${f.size} bytes)');
+  }
+
+  await b.close();
+  await db.close();
+}
 ```
 
 ## Additional information
 
-More information available on github [page](http://github.com/stregato/pbao)
+More information available on github [page](http://github.com/stregato/baolib)

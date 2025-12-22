@@ -10,7 +10,7 @@ import (
 	"github.com/stregato/bao/lib/sqlx"
 )
 
-// Stat retrieves the file information for a given file name from the stash.
+// Stat retrieves the file information for a given file name from the vault.
 func (s *Bao) Stat(name string) (File, error) {
 	dir, n := path.Split(name)
 	dir = path.Clean(dir)

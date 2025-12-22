@@ -86,9 +86,9 @@ func (s *Bao) writeFile(file File, progress chan int64) error {
 	now := core.Now()
 
 	if s.store == nil {
-		store, err := storage.Open(s.Url)
+		store, err := storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store %s in Bao.Write", s.Url, err)
+			return core.Errorw("cannot open store %s in Bao.Write", s.StoreConfig, err)
 		}
 		s.store = store
 	}
@@ -103,9 +103,9 @@ func (s *Bao) writeFile(file File, progress chan int64) error {
 	}()
 
 	if s.store == nil {
-		store, err := storage.Open(s.Url)
+		store, err := storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store %s in Bao.Write", s.Url, err)
+			return core.Errorw("cannot open store %s in Bao.Write", s.StoreConfig, err)
 		}
 		s.store = store
 	}
@@ -170,7 +170,7 @@ func (s *Bao) writeFile(file File, progress chan int64) error {
 
 }
 
-// Write writes a file to the stash.
+// Write writes a file to the vault.
 // It creates a record for the file in the database and writes the file to the storage.
 // If the Sync option is set, it writes the file synchronously, otherwise it writes it asynchronously.
 // If the Scheduled option is set, it schedules the file to be written later and the parameter `progress` is ignored.

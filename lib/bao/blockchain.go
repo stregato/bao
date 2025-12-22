@@ -363,9 +363,9 @@ func (s *Bao) syncBlockChain() error {
 	now := core.Now()
 	if s.store == nil {
 		var err error
-		s.store, err = storage.Open(s.Url)
+		s.store, err = storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store with connection URL %s", s.Url, err)
+			return core.Errorw("cannot open store with connection URL %s", s.StoreConfig, err)
 		}
 	}
 

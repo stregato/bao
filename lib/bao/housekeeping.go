@@ -91,9 +91,9 @@ func (s *Bao) housekeeping() error {
 	core.Start("starting housekeeping")
 
 	if s.store == nil {
-		store, err := storage.Open(s.Url)
+		store, err := storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store %s during housekeeping", s.Url, err)
+			return core.Errorw("cannot open store %s during housekeeping", s.StoreConfig, err)
 		}
 		s.store = store
 	}

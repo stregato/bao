@@ -1,11 +1,11 @@
 {
-    "version": "0.2.0",
+    "version": "0.1.1",
     "configurations": [
         {
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
-            "module": "pstash",
+            "module": "baolib",
             "console": "integratedTerminal"
         }
     ]

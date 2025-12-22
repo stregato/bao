@@ -2,13 +2,13 @@ from setuptools import setup, find_packages
 
 # Setup script
 setup(
-    name='pbao',
+    name='baolib',
     version='0.1.4',
     packages=find_packages(),
     python_requires='>=3.6, <4',
     include_package_data=True,
     package_data={
-        'pbao': ['_libs/**/*'],  # Include all files under pbao/_libs
+        'baolib': ['_libs/**/*'],  # Include all files under baolib/_libs
     },
     author='Francesco Ink',
     author_email='me@francesco.ink',

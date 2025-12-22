@@ -27,9 +27,9 @@ func (s *Bao) WaitFiles(ids ...FileId) error {
 	}
 
 	if s.store == nil {
-		s.store, err = storage.Open(s.Url)
+		s.store, err = storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store with connection URL %s", s.Url, err)
+			return core.Errorw("cannot open store with connection URL %s", s.StoreConfig, err)
 		}
 		core.Info("Opened store with ID %s", s.Id)
 	}
@@ -43,7 +43,7 @@ func (s *Bao) WaitFiles(ids ...FileId) error {
 		go s.waitFile(fileId, &wg) // Use a goroutine to handle each file
 	}
 	wg.Wait()
-	core.Info("Successfully synchronized stash with store ID %s in %s", s.Id, time.Since(now))
+	core.Info("Successfully synchronized vault with store ID %s in %s", s.Id, time.Since(now))
 	return nil
 }
 

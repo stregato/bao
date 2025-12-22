@@ -19,7 +19,6 @@ public class FileInfo {
     public String storageName;
     public String authorId;
 
-    @SuppressWarnings("unchecked")
     static FileInfo fromMap(Map<String, Object> m) {
         var fi = new FileInfo();
         fi.id = ((Number) m.getOrDefault("id", 0)).longValue();

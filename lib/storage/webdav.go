@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"time"
@@ -14,47 +13,50 @@ import (
 )
 
 type WebDAV struct {
-	c   *gowebdav.Client
-	p   string
-	url string
+	c  *gowebdav.Client
+	p  string
+	id string
+}
+
+type WebDAVConfig struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	BasePath string `json:"basePath"`
+	Verbose  int    `json:"verbose"`
+	Https    bool   `json:"https"`
 }
 
 // OpenWebDAV create a new Exchanger. The url is in the format dav://user:pass@host:port/basepath
-func OpenWebDAV(connectionUrl string) (Store, error) {
-	u, err := url.Parse(connectionUrl)
-	if err != nil {
-		return nil, core.Errorw("invalid url '%s'", connectionUrl, err)
-	}
+func OpenWebDAV(id string, c WebDAVConfig) (Store, error) {
 
 	var conn string
-	switch u.Scheme {
-	case "dav":
-		conn = fmt.Sprintf("http://%s:%s/%s", u.Host, u.Port(), u.Path)
-	case "davs":
-		conn = fmt.Sprintf("https://%s:%s/%s", u.Host, u.Port(), u.Path)
-	default:
-		core.IsErr(os.ErrInvalid, "invalid scheme %s: %v", u.Scheme)
-		return nil, os.ErrInvalid
+	if c.Https {
+		port := core.DefaultIfZero(c.Port, 80)
+		conn = fmt.Sprintf("https://%s:%d/%s", c.Host, port, c.BasePath)
+	} else {
+		port := core.DefaultIfZero(c.Port, 443)
+		conn = fmt.Sprintf("http://%s:%d/%s", c.Host, port, c.BasePath)
 	}
 
-	password, _ := u.User.Password()
-	c := gowebdav.NewClient(conn, u.User.Username(), password)
-	err = c.Connect()
+	client := gowebdav.NewClient(conn, c.Username, c.Password)
+	err := client.Connect()
 	if err != nil {
-		return nil, core.Errorw("cannot connect to WebDAV '%s'", connectionUrl, err)
+		return nil, core.Errorw("cannot connect to WebDAV '%s'", id, err)
 	}
 
 	w := &WebDAV{
-		c:   c,
-		p:   u.Path,
-		url: connectionUrl,
+		c:  client,
+		p:  c.BasePath,
+		id: id,
 	}
 
 	return w, nil
 }
 
 func (w *WebDAV) ID() string {
-	return w.url
+	return w.id
 }
 
 func (w *WebDAV) Read(name string, rang *Range, dest io.Writer, progress chan int64) error {
@@ -170,7 +172,7 @@ func (w *WebDAV) LastChange(dir string) (time.Time, error) {
 }
 
 func (w *WebDAV) String() string {
-	return w.url
+	return w.id
 }
 
 func (w *WebDAV) Describe() Description {

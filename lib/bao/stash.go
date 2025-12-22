@@ -17,17 +17,17 @@ const (
 )
 
 type Bao struct {
-	Id               string             `json:"id"`           // Unique identifier for the stash, derived from URL and public ID
-	UserId           security.PrivateID `json:"userId"`       // User's private ID, used for operations that require user authentication
-	UserPublicId     security.PublicID  `json:"userPublicId"` // User's public ID, used for public operations and access control
-	UserPublicIdHash uint64             `json:"-"`            // Hash of the public ID, used for quick lookups and comparisons
-	Url              string             `json:"url"`          // URL of the storage backend, where the stash data is stored
-	Author           security.PublicID  `json:"author"`       // Author of the stash, typically the public ID of the user who created it
-	DB               *sqlx.DB           `json:"-"`            // Database connection for storing and retrieving stash metadata
-	Config           Config             `json:"config"`       // Configuration settings for the stash, including retention policies and storage limits
+	Id               string              `json:"id"`           // Unique identifier for the vault, derived from URL and public ID
+	UserId           security.PrivateID  `json:"userId"`       // User's private ID, used for operations that require user authentication
+	UserPublicId     security.PublicID   `json:"userPublicId"` // User's public ID, used for public operations and access control
+	UserPublicIdHash uint64              `json:"-"`            // Hash of the public ID, used for quick lookups and comparisons
+	StoreConfig      storage.StoreConfig `json:"storeConfig"`  // Storage configuration manifest for the vault
+	Author           security.PublicID   `json:"author"`       // Author of the vault, typically the public ID of the user who created it
+	DB               *sqlx.DB            `json:"-"`            // Database connection for storing and retrieving vault metadata
+	Config           Config              `json:"config"`       // Configuration settings for the vault, including retention policies and storage limits
 
-	store              storage.Store // Storage backend for the stash, used for file operations
-	allocatedSize      int64         // Total allocated size for the stash, used for tracking storage usage
+	store              storage.Store // Storage backend for the vault, used for file operations
+	allocatedSize      int64         // Total allocated size for the vault, used for tracking storage usage
 	housekeepingTicker *time.Ticker  // Ticker for periodic housekeeping
 
 	lastBlockChainSyncAt time.Time // Timestamp of the last blockchain synchronization
@@ -40,7 +40,7 @@ type Bao struct {
 	ioThrottleCh        chan struct{}             // Channel for throttling I/O operations
 	ioWritingWgMaps     map[Group]*sync.WaitGroup // WaitGroup for waiting on I/O operations
 	ioLastChangeRunning int32
-	groups              []Group // List of groups in the stash, used for organizing files and access control
+	groups              []Group // List of groups in the vault, used for organizing files and access control
 	blockChainMu        sync.Mutex
 }
 

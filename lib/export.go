@@ -19,12 +19,13 @@ import (
 	"unsafe"
 
 	"github.com/sirupsen/logrus"
+	"github.com/stregato/bao/lib/bao"
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/mailbox"
+	"github.com/stregato/bao/lib/ql"
 	"github.com/stregato/bao/lib/security"
-	"github.com/stregato/bao/lib/bao_ql"
 	"github.com/stregato/bao/lib/sqlx"
-	"github.com/stregato/bao/lib/bao"
+	"github.com/stregato/bao/lib/storage"
 	"gopkg.in/yaml.v2"
 )
 
@@ -77,12 +78,12 @@ func cInput(err error, i *C.char, v any) error {
 
 var (
 	dbs       core.Registry[*sqlx.DB]
-	stashes   core.Registry[*bao.Bao]
-	sqlLayers core.Registry[*bao_ql.BaoQL]
+	vaultes   core.Registry[*bao.Bao]
+	sqlLayers core.Registry[*ql.BaoQL]
 	rows      core.Registry[*sqlx.RowsX]
 )
 
-// bao_setLogLevel sets the log level for the stash library. Possible values are: trace, debug, info, warn, error, fatal, panic.
+// bao_setLogLevel sets the log level for the vault library. Possible values are: trace, debug, info, warn, error, fatal, panic.
 //
 //export bao_setLogLevel
 func bao_setLogLevel(level *C.char) C.Result {
@@ -407,10 +408,10 @@ func bao_dbFetchOne(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	return cResult(row, 0, nil)
 }
 
-// bao_create creates a new stash with the specified identity, URL and configuration. A stash is a secure storage for keys and files. The function returns a handle to the bao.
+// bao_create creates a new vault with the specified identity, URL and configuration. A vault is a secure storage for keys and files. The function returns a handle to the bao.
 //
 //export bao_create
-func bao_create(dbH C.longlong, idC *C.char, storeC *C.char, settingsC *C.char) C.Result {
+func bao_create(dbH C.longlong, idC *C.char, storeC *C.char, configC *C.char) C.Result {
 	core.Start("db handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -419,29 +420,35 @@ func bao_create(dbH C.longlong, idC *C.char, storeC *C.char, settingsC *C.char) 
 		return cResult(nil, 0, err)
 	}
 
-	var settings bao.Config
-	err = cInput(err, settingsC, &settings)
+	var storeConfig storage.StoreConfig
+	err = cInput(err, storeC, &storeConfig)
 	if err != nil {
-		core.LogError("cannot unmarshal settings %s: %v", C.GoString(settingsC), err)
+		core.LogError("cannot unmarshal store config %s: %v", C.GoString(storeC), err)
+		return cResult(nil, 0, err)
+	}
+
+	var config bao.Config
+	err = cInput(err, configC, &config)
+	if err != nil {
+		core.LogError("cannot unmarshal settings %s: %v", C.GoString(configC), err)
 		return cResult(nil, 0, err)
 	}
 
 	id := C.GoString(idC)
-	store := C.GoString(storeC)
-	s, err := bao.Create(d, security.PrivateID(id), store, settings)
+	s, err := bao.Create(d, security.PrivateID(id), storeConfig, config)
 	if err != nil {
-		core.LogError("cannot create stash for store %s: %v", store, err)
+		core.LogError("cannot create vault for store %s: %v", storeConfig.Id, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("created stash for store %s", store)
-	return cResult(s, stashes.Add(s), err)
+	core.End("created vault for store %s", storeConfig.Id)
+	return cResult(s, vaultes.Add(s), err)
 }
 
-// bao_open opens an existing stash with the specified identity, author and URL. The function returns a handle to the bao.
+// bao_open opens an existing vault with the specified identity, author and URL. The function returns a handle to the bao.
 //
 //export bao_open
-func bao_open(dbH C.longlong, idC *C.char, urlC *C.char, authorC *C.char) C.Result {
+func bao_open(dbH C.longlong, idC *C.char, configC *C.char, authorC *C.char) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 
@@ -452,17 +459,23 @@ func bao_open(dbH C.longlong, idC *C.char, urlC *C.char, authorC *C.char) C.Resu
 	}
 
 	id := C.GoString(idC)
-	url := C.GoString(urlC)
 	author := C.GoString(authorC)
 
-	s, err := bao.Open(d, security.PrivateID(id), url, security.PublicID(author))
+	var config storage.StoreConfig
+	err = cInput(err, configC, &config)
 	if err != nil {
-		core.LogError("cannot open stash for store %s: %v", url, err)
+		core.LogError("cannot unmarshal store config %s: %v", C.GoString(configC), err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("stash open for store %s", url)
-	return cResult(s, stashes.Add(s), nil)
+	s, err := bao.Open(d, security.PrivateID(id), config, security.PublicID(author))
+	if err != nil {
+		core.LogError("cannot open vault for store %s: %v", config.Id, err)
+		return cResult(nil, 0, err)
+	}
+
+	core.End("vault open for store %s", config.Id)
+	return cResult(s, vaultes.Add(s), nil)
 }
 
 // bao_close closes the specified safe.
@@ -471,14 +484,14 @@ func bao_open(dbH C.longlong, idC *C.char, urlC *C.char, authorC *C.char) C.Resu
 func bao_close(sH C.longlong) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	s.Close()
-	stashes.Remove(int64(sH))
+	vaultes.Remove(int64(sH))
 	core.End("handle %d", sH)
 	return cResult(nil, 0, nil)
 }
@@ -489,9 +502,9 @@ func bao_close(sH C.longlong) C.Result {
 func bao_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -517,15 +530,15 @@ func bao_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
 func bao_getAccess(sH C.longlong, group *C.char) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	a, err := s.GetUsers(bao.Group(C.GoString(group)))
 	if err != nil {
-		core.LogError("cannot get access for stash %s: %v", C.GoString(group), err)
+		core.LogError("cannot get access for vault %s: %v", C.GoString(group), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("group %s", C.GoString(group))
@@ -539,15 +552,15 @@ func bao_getGroups(sH C.longlong, userC *C.char) C.Result {
 	userID := C.GoString(userC)
 	core.Start("handle %d user len %d", sH, len(userID))
 	core.TimeTrack()
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	groups, err := s.GetGroups(security.PublicID(userID))
 	if err != nil {
-		core.LogError("cannot get groups for provided user in stash %d: %v", sH, err)
+		core.LogError("cannot get groups for provided user in vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("user len %d", len(userID))
@@ -564,9 +577,9 @@ func bao_sync(sH C.longlong, groupsC *C.char) C.Result {
 
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -580,11 +593,11 @@ func bao_sync(sH C.longlong, groupsC *C.char) C.Result {
 
 	files, err := s.Sync(groups...)
 	if err != nil {
-		core.LogError("cannot synchronize groups %v in stash %d: %v", groups, sH, err)
+		core.LogError("cannot synchronize groups %v in vault %d: %v", groups, sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("bao_sync successful for stash %d with groups: %v", sH, groups)
+	core.End("bao_sync successful for vault %d with groups: %v", sH, groups)
 	return cResult(files, 0, nil)
 }
 
@@ -594,18 +607,18 @@ func bao_sync(sH C.longlong, groupsC *C.char) C.Result {
 func bao_listGroups(sH C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	groups, err := s.ListGroups()
 	if err != nil {
-		core.LogError("cannot list groups for stash %d: %v", sH, err)
+		core.LogError("cannot list groups for vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("stash with handle %d groups: %v", sH, groups)
+	core.End("vault with handle %d groups: %v", sH, groups)
 	return cResult(groups, 0, nil)
 }
 
@@ -617,7 +630,7 @@ func bao_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 
 	core.TimeTrack()
 	core.Start("called with sH: %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -632,11 +645,11 @@ func bao_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 
 	err = s.WaitFiles(fileIds...)
 	if err != nil {
-		logrus.Errorf("cannot synchronize stash %d: %v", sH, err)
+		logrus.Errorf("cannot synchronize vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("bao_sync successful for stash %d with file IDs: %v", sH, fileIds)
+	core.End("bao_sync successful for vault %d with file IDs: %v", sH, fileIds)
 	return cResult(nil, 0, nil)
 }
 
@@ -646,9 +659,9 @@ func bao_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -657,10 +670,10 @@ func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Res
 
 	err = s.SetAttribute(bao.IOOption(options), name, value)
 	if err != nil {
-		core.LogError("cannot set attribute %s to %s in stash %d: %v", name, value, sH, err)
+		core.LogError("cannot set attribute %s to %s in vault %d: %v", name, value, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("set attribute %s to %s in stash %d", name, value, sH)
+	core.End("set attribute %s to %s in vault %d", name, value, sH)
 	return cResult(nil, 0, nil)
 }
 
@@ -670,9 +683,9 @@ func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Res
 func bao_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s, author: %s", sH, C.GoString(nameC), C.GoString(authorC))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -682,10 +695,10 @@ func bao_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 
 	value, err := s.GetAttribute(name, security.PublicID(author))
 	if err != nil {
-		core.LogError("cannot get attribute '%s' for provided user (len %d) in stash %d: %v", name, authorLen, sH, err)
+		core.LogError("cannot get attribute '%s' for provided user (len %d) in vault %d: %v", name, authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attribute '%s' for user len %d in stash %d: %s", name, authorLen, sH, value)
+	core.End("got attribute '%s' for user len %d in vault %d: %s", name, authorLen, sH, value)
 	return cResult(value, 0, nil)
 }
 
@@ -695,9 +708,9 @@ func bao_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 func bao_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -706,10 +719,10 @@ func bao_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 
 	attrs, err := s.GetAttributes(security.PublicID(author))
 	if err != nil {
-		core.LogError("cannot get attributes for provided user (len %d) in stash %d: %v", authorLen, sH, err)
+		core.LogError("cannot get attributes for provided user (len %d) in vault %d: %v", authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attributes for user len %d in stash %d: %v", authorLen, sH, attrs)
+	core.End("got attributes for user len %d in vault %d: %v", authorLen, sH, attrs)
 	return cResult(attrs, 0, nil)
 }
 
@@ -719,7 +732,7 @@ func bao_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 func bao_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, limit C.int) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, dir: %s, after: %d, fromId: %d, limit: %d", sH, C.GoString(dir), after, fromId, limit)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -736,9 +749,9 @@ func bao_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, limit C.i
 func bao_stat(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -747,10 +760,10 @@ func bao_stat(sH C.longlong, name *C.char) C.Result {
 		return cResult(nil, 0, err)
 	}
 	if err != nil {
-		core.LogError("cannot get file info for %s in stash %d: %v", C.GoString(name), sH, err)
+		core.LogError("cannot get file info for %s in vault %d: %v", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("successful statistic for file %s in stash %d: %v", C.GoString(name), sH, info)
+	core.End("successful statistic for file %s in vault %d: %v", C.GoString(name), sH, info)
 	return cResult(info, 0, err)
 }
 
@@ -760,13 +773,13 @@ func bao_stat(sH C.longlong, name *C.char) C.Result {
 func bao_getGroup(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("bao_getGroup called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
 
 	group, err := s.GetGroup(C.GoString(name))
-	core.End("successful group retrieval for file %s in stash %d: %v", C.GoString(name), sH, group)
+	core.End("successful group retrieval for file %s in vault %d: %v", C.GoString(name), sH, group)
 	return cResult(group, 0, err)
 }
 
@@ -778,13 +791,13 @@ func bao_getGroup(sH C.longlong, name *C.char) C.Result {
 func bao_getAuthor(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("bao_getAuthor called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
 
 	author, err := s.GetAuthor(C.GoString(name))
-	core.End("successful author retrieval for file %s in stash %d: %v", C.GoString(name), sH, author)
+	core.End("successful author retrieval for file %s in vault %d: %v", C.GoString(name), sH, author)
 	return cResult(author, 0, err)
 }
 
@@ -794,7 +807,7 @@ func bao_getAuthor(sH C.longlong, name *C.char) C.Result {
 func bao_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s, dest: %s, options: %d", sH, C.GoString(name), C.GoString(destC), options)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -802,11 +815,11 @@ func bao_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
 	dest := C.GoString(destC)
 	file, err := s.Read(C.GoString(name), dest, bao.IOOption(options), nil)
 	if err != nil {
-		core.LogError("cannot read file %s from stash %d: %v", C.GoString(name), sH, err)
+		core.LogError("cannot read file %s from vault %d: %v", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("successfully read file %s from stash %d to %s", C.GoString(name), sH, C.GoString(destC))
+	core.End("successfully read file %s from vault %d to %s", C.GoString(name), sH, C.GoString(destC))
 	return cResult(file, 0, err)
 }
 
@@ -816,9 +829,9 @@ func bao_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
 func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, options C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, dest: %s, source: %s, group: %s, options: %d", sH, C.GoString(destC), C.GoString(sourceC), C.GoString(groupC), options)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -829,11 +842,11 @@ func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, opt
 
 	file, err := s.Write(dest, source, bao.Group(group), attrs, bao.IOOption(options), nil)
 	if err != nil {
-		core.LogError("cannot write file %s to stash %d, src %s: %v", dest, sH, source, err)
+		core.LogError("cannot write file %s to vault %d, src %s: %v", dest, sH, source, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("successfully wrote file %s to stash %d, src %s", dest, sH, source)
+	core.End("successfully wrote file %s to vault %d, src %s", dest, sH, source)
 	return cResult(file, 0, nil)
 }
 
@@ -843,20 +856,20 @@ func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, opt
 func bao_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(nameC))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	name := C.GoString(nameC)
 	err = s.Delete(name, bao.IOOption(options))
 	if err != nil {
-		core.LogError("cannot delete file %s from stash %d: %v", name, sH, err)
+		core.LogError("cannot delete file %s from vault %d: %v", name, sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("successfully deleted file %s from stash %d", name, sH)
+	core.End("successfully deleted file %s from vault %d", name, sH)
 	return cResult(nil, 0, nil)
 }
 
@@ -866,26 +879,26 @@ func bao_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 func bao_allocatedSize(sH C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d", sH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	size := s.AllocatedSize()
-	core.End("allocated size for stash %d: %d", sH, size)
+	core.End("allocated size for vault %d: %d", sH, size)
 	return cResult(size, 0, nil)
 }
 
-// baoql_layer returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the stash data.
+// baoql_layer returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the vault data.
 //
 //export baoql_layer
 func baoql_layer(sH C.longlong, groupC *C.char, dbH C.int) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, group: %s, dbH: %d", sH, C.GoString(groupC), dbH)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -897,12 +910,12 @@ func baoql_layer(sH C.longlong, groupC *C.char, dbH C.int) C.Result {
 		return cResult(nil, 0, err)
 	}
 
-	dt, err := bao_ql.BaoQLayer(s, group, db)
+	dt, err := ql.SQL(s, group, db)
 	if err != nil {
-		core.LogError("cannot create sql layer for stash %d: %v", sH, err)
+		core.LogError("cannot create sql layer for vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("sql layer for stash %d created", sH)
+	core.End("sql layer for vault %d created", sH)
 	return cResult(dt, sqlLayers.Add(dt), err)
 }
 
@@ -966,7 +979,7 @@ func baoql_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	return cResult(nil, rows.Add(&rows_), err)
 }
 
-// baoql_sync_tables synchronizes the SQL tables with the stash data.
+// baoql_sync_tables synchronizes the SQL tables with the vault data.
 //
 //export baoql_sync_tables
 func baoql_sync_tables(dtH C.longlong) C.Result {
@@ -1136,9 +1149,9 @@ func baoql_cancel(dtH C.longlong) C.Result {
 func mailbox_send(sH C.longlong, dir, group, message *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, dir: %s, group: %s, message: %s", sH, C.GoString(dir), C.GoString(group), C.GoString(message))
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -1165,18 +1178,18 @@ func mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C.Res
 	core.TimeTrack()
 
 	core.Start("called with sH: %d, dir: %s, since: %d, fromId: %d", sH, C.GoString(dir), since, fromId)
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	msgs, err := mailbox.Receive(s, C.GoString(dir), time.UnixMilli(int64(since)), int64(fromId))
 	if err != nil {
-		core.LogError("cannot receive messages from stash %d: %v", sH, err)
+		core.LogError("cannot receive messages from vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("successfully received messages from stash %d: %v", sH, msgs)
+	core.End("successfully received messages from vault %d: %v", sH, msgs)
 	return cResult(msgs, 0, err)
 }
 
@@ -1187,9 +1200,9 @@ func mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int, des
 	core.TimeTrack()
 	core.Start("called with sH: %d, dir: %s, message: %s, attachment: %d, dest: %s", sH, C.GoString(dir), C.GoString(message), attachment, C.GoString(dest))
 
-	s, err := stashes.Get(int64(sH))
+	s, err := vaultes.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get stash with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -1210,21 +1223,21 @@ func mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int, des
 }
 
 type Snapshot struct {
-	DBs       *core.Registry[*sqlx.DB]
-	Stashes   *core.Registry[*bao.Bao]
-	BaoQLayers *core.Registry[*bao_ql.BaoQL]
+	DBs        *core.Registry[*sqlx.DB]
+	vaultes    *core.Registry[*bao.Bao]
+	BaoQLayers *core.Registry[*ql.BaoQL]
 }
 
-// bao_snapshot creates a snapshot of all stashes and baoqlayers.
+// bao_snapshot creates a snapshot of all vaultes and baoqlayers.
 //
 //export bao_snapshot
 func bao_snapshot() C.Result {
 	core.TimeTrack()
-	core.Start("creating snapshot of stashes and sql layers")
+	core.Start("creating snapshot of vaultes and sql layers")
 
 	snapshot := Snapshot{
-		DBs:       &dbs,
-		Stashes:   &stashes,
+		DBs:        &dbs,
+		vaultes:    &vaultes,
 		BaoQLayers: &sqlLayers,
 	}
 

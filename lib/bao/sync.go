@@ -24,9 +24,9 @@ func (s *Bao) Sync(groups ...Group) (newFiles []File, err error) {
 		return nil, core.Errorw("no groups provided for synchronization")
 	}
 	if s.store == nil {
-		s.store, err = storage.Open(s.Url)
+		s.store, err = storage.Open(s.StoreConfig)
 		if err != nil {
-			return nil, core.Errorw("cannot open store with connection URL %s", s.Url, err)
+			return nil, core.Errorw("cannot open store with connection URL %s", s.StoreConfig, err)
 		}
 	}
 

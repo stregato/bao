@@ -6,7 +6,9 @@ void main() async {
   var alice = newPrivateID();
   var db = await DB.defaultDB();
 
-  var s = await Bao.create(db, alice, 'file:///tmp/${publicID(alice)}/sample');
+  final storeConfig =
+      StoreConfig.fromLocalUrl('file:///tmp/${publicID(alice)}/sample');
+  var s = await Bao.create(db, alice, storeConfig);
   var bob = newPrivateID();
 
   var bobID = publicID(bob);

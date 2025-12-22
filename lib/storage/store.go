@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -80,7 +79,7 @@ type Store interface {
 	Describe() Description
 }
 
-func LoadTestURLs() (urls map[string]string) {
+func LoadTestURLs() (urls map[string]StoreConfig) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		panic(core.Errorw("cannot get user home dir", err))
@@ -105,15 +104,10 @@ func LoadTestURLs() (urls map[string]string) {
 
 func NewTestStore(id string) Store {
 
-	urls := LoadTestURLs()
-	url := urls[id]
-	if url == "" {
-		panic(fmt.Errorf("store with id %s not found", id))
-	}
-
-	store, err := Open(url)
+	c := LoadTestConfig(nil, id)
+	store, err := Open(c)
 	if err != nil {
-		panic(core.Errorw("cannot open store %s", url, err))
+		panic(core.Errorw("cannot open syestore %s", id, err))
 	}
 	ls, _ := store.ReadDir("", Filter{})
 	for _, l := range ls {

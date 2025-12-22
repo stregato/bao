@@ -9,14 +9,15 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/storage"
 )
 
 func TestStashWrite(t *testing.T) {
 	alice := security.NewPrivateIDMust()
-	db := sqlx.NewTestDB(t, "stash.db", "")
-	storeUrl := "file://" + t.TempDir()
+	db := sqlx.NewTestDB(t, "vault.db", "")
+	storeConfig := storage.LoadTestConfig(t, "test")
 
-	s, err := Create(db, alice, storeUrl, Config{})
+	s, err := Create(db, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
@@ -72,10 +73,10 @@ func TestStashWrite(t *testing.T) {
 
 func TestWritePublic(t *testing.T) {
 	alice := security.NewPrivateIDMust()
-	db := sqlx.NewTestDB(t, "stash.db", "")
-	storeUrl := "file://" + t.TempDir()
+	db := sqlx.NewTestDB(t, "vault.db", "")
+	storeConfig := storage.LoadTestConfig(t, "test")
 
-	s, err := Create(db, alice, storeUrl, Config{})
+	s, err := Create(db, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
@@ -93,10 +94,10 @@ func TestWritePublic(t *testing.T) {
 
 func TestWriteAttrs(t *testing.T) {
 	alice := security.NewPrivateIDMust()
-	db := sqlx.NewTestDB(t, "stash.db", "")
-	storeUrl := "file://" + t.TempDir()
+	db := sqlx.NewTestDB(t, "vault.db", "")
+	storeConfig := storage.LoadTestConfig(t, "test")
 
-	s, err := Create(db, alice, storeUrl, Config{})
+	s, err := Create(db, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	attrs := []byte{1, 2, 3, 4, 5}

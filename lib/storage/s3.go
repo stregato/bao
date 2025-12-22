@@ -29,18 +29,32 @@ type S3 struct {
 	dir    string
 }
 
+type S3ConfigAuth struct {
+	AccessKeyId     string `json:"accessKeyId"`
+	SecretAccessKey string `json:"secretAccessKey"`
+}
+
+type S3Config struct {
+	Endpoint string       `json:"endpoint"`
+	Region   string       `json:"region"`
+	Bucket   string       `json:"bucket"`
+	Auth     S3ConfigAuth `json:"auth"`
+	Verbose  int          `json:"verbose"`
+	Proxy    string       `json:"proxy"`
+}
+
 type s3logger struct{}
 
 func (l s3logger) Logf(classification logging.Classification, format string, v ...interface{}) {
 	fmt.Printf(format, v...)
 }
 
-// OpenS3 create a new Exchanger. The url is in the format s3://bucket/basepath?a=accesskey&s=secretkey&r=region&p=proxy&v=verbosity
-func OpenS3(connectionUrl string) (Store, error) {
-	core.Start("url %s", connectionUrl)
-	u, err := url.Parse(connectionUrl)
+// OpenS3 create a new S3 storage
+func OpenS3(id string, c S3Config) (Store, error) {
+	core.Start("url %s", c.Endpoint)
+	u, err := url.Parse(c.Endpoint)
 	if err != nil {
-		return nil, core.Errorw("invalid url '%s'", connectionUrl, err)
+		return nil, core.Errorw("invalid url '%s'", c.Endpoint, err)
 	}
 
 	r2Resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
@@ -49,44 +63,37 @@ func OpenS3(connectionUrl string) (Store, error) {
 		}, nil
 	})
 
-	q := u.Query()
-	verbose := q.Get("v")
-	accessKey := q.Get("a")
-	secret := q.Get("s")
-	proxy := q.Get("p")
-	region := q.Get("r")
-	if region == "" {
-		region = "auto"
+	if c.Region == "" {
+		c.Region = "auto"
 	}
 
 	parts := strings.Split(strings.TrimLeft(u.Path, "/"), "/")
 	if len(parts) == 0 {
-		return nil, core.Errorw("missing bucket in %s", connectionUrl)
+		return nil, core.Errorw("missing bucket in %s", c.Endpoint)
 	}
 	bucket := parts[0]
 	dir := strings.Join(parts[1:], "/")
-	repr := fmt.Sprintf("s3://%s/%s", u.Host, u.Path)
-
 	options := []func(*config.LoadOptions) error{
 		config.WithEndpointResolverWithOptions(r2Resolver),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secret, "")),
-		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(c.Auth.AccessKeyId,
+			c.Auth.SecretAccessKey, "")),
+		config.WithRegion(c.Region),
 	}
-	switch verbose {
-	case "1":
+	switch c.Verbose {
+	case 1:
 		options = append(options,
 			config.WithLogger(s3logger{}),
 			config.WithClientLogMode(aws.LogRequest|aws.LogResponse),
 		)
-	case "2":
+	case 2:
 		options = append(options,
 			config.WithLogger(s3logger{}),
 			config.WithClientLogMode(aws.LogRequestWithBody|aws.LogResponseWithBody),
 		)
 	}
 
-	if proxy != "" {
-		proxyConfig := http.ProxyURL(&url.URL{Host: proxy})
+	if c.Proxy != "" {
+		proxyConfig := http.ProxyURL(&url.URL{Host: c.Proxy})
 		httpClient := &http.Client{
 			Transport: &http.Transport{
 				Proxy: proxyConfig,
@@ -97,12 +104,12 @@ func OpenS3(connectionUrl string) (Store, error) {
 
 	cfg, err := config.LoadDefaultConfig(context.TODO(), options...)
 	if err != nil {
-		return nil, core.Errorw("cannot create S3 config for %s:%v", repr, err)
+		return nil, core.Errorw("cannot create S3 config for %s: %v", id, err)
 	}
 
 	s := &S3{
 		client: s3.NewFromConfig(cfg),
-		id:     repr,
+		id:     id,
 		bucket: bucket,
 		dir:    dir,
 	}

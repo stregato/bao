@@ -1,13 +1,14 @@
-package bao_ql
+package ql
 
 import (
 	_ "embed"
 	"testing"
 
+	"github.com/stregato/bao/lib/bao"
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
-	"github.com/stregato/bao/lib/bao"
+	"github.com/stregato/bao/lib/storage"
 )
 
 //go:embed test.sql
@@ -17,12 +18,12 @@ func TestExec(t *testing.T) {
 	alice := security.NewPrivateIDMust()
 	aliceID := alice.PublicIDMust()
 	bob := security.NewPrivateIDMust()
-	storeUrl := "file://" + t.TempDir()
+	storeConfig := storage.LoadTestConfig(t, "test")
 
 	db := sqlx.NewTestDB(t, "bao.db", "")
-	dataDb := sqlx.NewTestDB(t, "stash2.db", testDdl)
+	dataDb := sqlx.NewTestDB(t, "vault2.db", testDdl)
 
-	s, err := bao.Create(db, alice, storeUrl, bao.Config{})
+	s, err := bao.Create(db, alice, storeConfig, bao.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SyncAccess(0,
@@ -31,7 +32,7 @@ func TestExec(t *testing.T) {
 	)
 	core.TestErr(t, err, "cannot set access: %v")
 
-	sl, err := BaoQLayer(s, bao.Users, dataDb)
+	sl, err := SQL(s, bao.Users, dataDb)
 	core.TestErr(t, err, "cannot open db: %v")
 
 	_, err = sl.FetchOne("SELECT_TEST_DATA", sqlx.Args{})
@@ -76,13 +77,13 @@ func TestExec(t *testing.T) {
 	db.Close()
 	dataDb.Close()
 
-	db2 := sqlx.NewTestDB(t, "stash3.db", "")
-	dataDb2 := sqlx.NewTestDB(t, "stash4.db", testDdl)
+	db2 := sqlx.NewTestDB(t, "vault3.db", "")
+	dataDb2 := sqlx.NewTestDB(t, "vault4.db", testDdl)
 
-	s, err = bao.Open(db2, bob, storeUrl, aliceID)
-	core.TestErr(t, err, "cannot open stash: %v")
+	s, err = bao.Open(db2, bob, storeConfig, aliceID)
+	core.TestErr(t, err, "cannot open vault: %v")
 
-	sl, err = BaoQLayer(s, bao.Users, dataDb2)
+	sl, err = SQL(s, bao.Users, dataDb2)
 	core.TestErr(t, err, "cannot open db: %v")
 
 	updates, err = sl.SyncTables()

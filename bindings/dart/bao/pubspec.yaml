@@ -1,6 +1,6 @@
 name: bao
 description: Dart bindings for Bao. Bao is a library for encrypted data storage and exchange. 
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/stregato/bao
 
 data:
@@ -12,11 +12,17 @@ environment:
 
 # Add regular dependencies here.
 dependencies:
-  path: ^1.8.0
+  archive: ^3.3.5
+  crypto: ^3.0.2
   ffi: ^2.0.0
   flutter:
     sdk: flutter
+  http: ^0.13.6
+  path: ^1.8.0
 
 dev_dependencies:
   lints: ^4.0.0
   test: ^1.24.0
+
+executables:
+  bootstrap: bin/bootstrap.dart

@@ -1,4 +1,4 @@
-package bao_ql
+package ql
 
 func (ds *BaoQL) MarshalYAML() (any, error) {
 	return map[string]any{

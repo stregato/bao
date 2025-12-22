@@ -2,19 +2,19 @@ import 'package:bao/bao.dart';
 import 'package:test/test.dart';
 
 void main() {
-
   group('A group of tests', () {
     setUp(() async {
       await initBaoLibrary();
     });
 
-    test('Create Bao', () async{
+    test('Create Bao', () async {
       var i = newPrivateID();
 
       var db = await DB.defaultDB();
 
       var url = 'file:///tmp/${publicID(i)}/sample';
-      var s = await Bao.create(db, i, url);
+      var storeConfig = StoreConfig.fromLocalUrl(url);
+      var s = await Bao.create(db, i, storeConfig);
 
       var alice = newPrivateID();
       var aliceID = publicID(alice);
@@ -32,7 +32,8 @@ void main() {
       expect(db, isNotNull);
 
       var url = 'file:///tmp/${publicID(i)}/sample';
-      var s = await Bao.create(db, i, url);
+      var storeConfig = StoreConfig.fromLocalUrl(url);
+      var s = await Bao.create(db, i, storeConfig);
       expect(s, isNotNull);
 
       var file = await s.write('file.txt', public);
@@ -45,7 +46,5 @@ void main() {
       s.close();
       db.close();
     });
-
-    
-});
+  });
 }

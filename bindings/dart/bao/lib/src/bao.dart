@@ -7,6 +7,7 @@ import 'bao_ql.dart';
 import 'db.dart';
 import 'identity.dart';
 import 'loader.dart';
+import 'storage.dart';
 
 typedef Access = int;
 const int accessRead = 1;
@@ -51,7 +52,7 @@ class AccessChange {
 }
 
 /// Represents a Bao instance with its handle, author, and URL.
-/// Provides methods to create, open, close, and manage the stash.
+/// Provides methods to create, open, close, and manage the vault.
 class Bao {
   int hnd = 0;
   String id = '';
@@ -60,6 +61,7 @@ class Bao {
   String url = '';
   PublicID author = '';
   Map<String, dynamic> config = {};
+  StoreConfig storeConfig = const StoreConfig();
 
   static Bao none = Bao();
 
@@ -70,33 +72,40 @@ class Bao {
     s.id = m['id'] ?? '';
     s.userId = m['userId'] ?? '';
     s.userPublicId = m['userPublicId'] ?? '';
-    s.url = m['url'] ?? '';
+    if (m['storeConfig'] != null && m['storeConfig'] is Map) {
+      final rawManifest = m['storeConfig'] as Map;
+      s.storeConfig = StoreConfig.fromJson(Map<String, dynamic>.from(
+          rawManifest.map((key, value) => MapEntry(key.toString(), value))));
+      s.url = s.storeConfig.id;
+    } else {
+      s.url = m['url'] ?? '';
+    }
     s.author = m['author'] ?? '';
     s.config = m['config'] ?? {};
     return s;
   }
 
-  /// Creates a new stash with the given identity, URL, and settings.
-  /// The settings parameter is a map of configuration options (see Go stash.Config).
+  /// Creates a new vault with the given identity, store configuration, and settings.
+  /// The settings parameter is a map of configuration options (see Go vault.Config).
   /// Returns a tuple containing the created Bao and an error message if any.
-  static Future<Bao> create(DB db, PrivateID identity, String url,
+  static Future<Bao> create(DB db, PrivateID identity, StoreConfig storeConfig,
       {Map<String, dynamic> settings = const {}}) async {
-    var res =
-        await bindings.acall('bao_create', [db.hnd, identity, url, settings]);
+    var res = await bindings.acall(
+        'bao_create', [db.hnd, identity, storeConfig.toJson(), settings]);
     return fromResult(res);
   }
 
-  /// Opens an existing stash with the given identity, URL, and author.
-  /// The options parameter can be used to specify additional options for the stash.
+  /// Opens an existing vault with the given identity, store configuration, and author.
+  /// The options parameter can be used to specify additional options for the vault.
   /// Returns a tuple containing the opened Bao and an error message if any.
-  static Future<Bao> open(
-      DB db, PrivateID identity, String url, PublicID author) async {
-    var res =
-        await bindings.acall('bao_open', [db.hnd, identity, url, author]);
+  static Future<Bao> open(DB db, PrivateID identity, StoreConfig storeConfig,
+      PublicID author) async {
+    var res = await bindings
+        .acall('bao_open', [db.hnd, identity, storeConfig.toJson(), author]);
     return fromResult(res);
   }
 
-  /// Closes the stash and releases any associated resources.
+  /// Closes the vault and releases any associated resources.
   void close() async {
     var res = await bindings.acall('bao_close', [hnd]);
     res.throwIfError();
@@ -108,8 +117,8 @@ class Bao {
   }
 
   /// Applies a batch of access changes and optionally flushes them immediately.
-  Future<void> syncAccess([List<AccessChange> changes = const [],
-      int options = 0]) async {
+  Future<void> syncAccess(
+      [List<AccessChange> changes = const [], int options = 0]) async {
     var res = await bindings.acall('bao_syncAccess', [hnd, options, changes]);
     res.throwIfError();
   }
@@ -141,7 +150,7 @@ class Bao {
     return res.list.map((e) => e as Group).toList();
   }
 
-  /// Synchronizes the dirs contents of the stash and returns the list of changed files.
+  /// Synchronizes the dirs contents of the vault and returns the list of changed files.
   /// The [groups] parameter is a list of group names to sync.
   Future<List<FileInfo>> sync([List<Group> groups = const []]) async {
     // Maps to Go export bao_sync
@@ -149,29 +158,31 @@ class Bao {
     return res.list.map((e) => FileInfo.fromMap(e)).toList();
   }
 
-  /// Sets a custom attribute for the stash.
+  /// Sets a custom attribute for the vault.
   /// The [name] parameter is the name of the attribute.
   /// The [value] parameter is the value of the attribute.
-  Future<void> setAttribute(String name, String value, [int options = 0]) async {
-    var res = await bindings.acall('bao_setAttribute', [hnd, options, name, value]);
+  Future<void> setAttribute(String name, String value,
+      [int options = 0]) async {
+    var res =
+        await bindings.acall('bao_setAttribute', [hnd, options, name, value]);
     res.throwIfError();
   }
 
-  /// Retrieves the value of a custom attribute for the stash.
+  /// Retrieves the value of a custom attribute for the vault.
   /// The [name] parameter is the name of the attribute.
   Future<String> getAttribute(String name, PublicID author) async {
     var res = await bindings.acall('bao_getAttribute', [hnd, name, author]);
     return res.string;
   }
 
-  /// Retrieves all custom attributes for the stash.
+  /// Retrieves all custom attributes for the vault.
   /// The [author] parameter is the PublicID of the author requesting the attributes.
   Future<Map<PublicID, String>> getAttributes(PublicID author) async {
     var res = await bindings.acall('bao_getAttributes', [hnd, author]);
     return res.map.map((k, v) => MapEntry<PublicID, String>(k, v));
   }
 
-  /// Reads the directory contents of the stash.
+  /// Reads the directory contents of the vault.
   /// The [dir] parameter specifies the directory to read.
   /// The [since] parameter can be used to filter files modified since a specific date.
   /// The [fromId] parameter specifies the starting file ID for pagination.
@@ -191,7 +202,7 @@ class Bao {
     return FileInfo.fromMap(res.map);
   }
 
-  /// Reads data from the stash with the given name and destination path.
+  /// Reads data from the vault with the given name and destination path.
   /// The options parameter can be used to specify additional options for the read operation.
   /// Returns an error if the read operation fails.
   Future<FileInfo> read(String name, String dst, {int options = 0}) async {
@@ -199,7 +210,7 @@ class Bao {
     return FileInfo.fromMap(res.map);
   }
 
-  /// Writes data to the stash with the given destination, group, and source path.
+  /// Writes data to the vault with the given destination, group, and source path.
   /// The src parameter is the source path of the file to be written. If src is empty, it will write only the header without any content.
   /// The options parameter can be used to specify additional options for the write operation.
   Future<FileInfo> write(String dest, Group group,
@@ -210,7 +221,7 @@ class Bao {
     return FileInfo.fromMap(res.map);
   }
 
-  /// Deletes the file with the given name from the stash.
+  /// Deletes the file with the given name from the vault.
   /// Returns an error if the deletion operation fails.
   Future<void> delete(String name, {int options = 0}) async {
     var res = await bindings.acall('bao_delete', [hnd, name, options]);

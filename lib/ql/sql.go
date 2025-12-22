@@ -1,4 +1,4 @@
-package bao_ql
+package ql
 
 import (
 	_ "embed"
@@ -12,10 +12,10 @@ import (
 
 type transaction struct {
 	tx      *sqlx.TxX
-	Updates []Update     // Updates is a list of Update encoded in msgpack and encrypted
-	Version float32      // Version is the highest version of the updates
+	Updates []Update   // Updates is a list of Update encoded in msgpack and encrypted
+	Version float32    // Version is the highest version of the updates
 	Id      bao.FileId // Id is the id of the transaction
-	Tm      time.Time    // Tm is the time of the transaction
+	Tm      time.Time  // Tm is the time of the transaction
 }
 
 type BaoQL struct {
@@ -31,8 +31,8 @@ type BaoQL struct {
 
 const sqlLayerDir = "bao_ql"
 
-func BaoQLayer(s *bao.Bao, group bao.Group, db *sqlx.DB) (*BaoQL, error) {
-	core.Start("stash %s, group %s", s.Id, group)
+func SQL(s *bao.Bao, group bao.Group, db *sqlx.DB) (*BaoQL, error) {
+	core.Start("vault %s, group %s", s.Id, group)
 
 	lastId, err := readLastTransactionsId(s.DB, s.String(), group)
 	if err != nil {

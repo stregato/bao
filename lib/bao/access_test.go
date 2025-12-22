@@ -7,15 +7,22 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/storage"
 )
 
 func TestAccess(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	alice := security.NewPrivateIDMust()
-	db := sqlx.NewTestDB(t, "stash.db", "")
-	storeUrl := "file://" + t.TempDir()
+	db := sqlx.NewTestDB(t, "vault.db", "")
+	storeConfig := storage.StoreConfig{
+		Id:   "local-test-store",
+		Type: "local",
+		Local: storage.LocalConfig{
+			Base: "file://" + t.TempDir(),
+		},
+	}
 
-	s, err := Create(db, alice, storeUrl, Config{})
+	s, err := Create(db, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SyncAccess(0, AccessChange{Group: Users, Access: ReadWrite, UserId: alice.PublicIDMust()})
@@ -33,10 +40,17 @@ func TestAccessTwoUsers(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	alice := security.NewPrivateIDMust()
 	alicePublic := alice.PublicIDMust()
-	db := sqlx.NewTestDB(t, "stash.db", "")
-	storeUrl := "file://" + t.TempDir()
+	db := sqlx.NewTestDB(t, "vault.db", "")
 
-	sa, err := Create(db, alice, storeUrl, Config{})
+	storeConfig := storage.StoreConfig{
+		Id:   "local-test-store",
+		Type: "local",
+		Local: storage.LocalConfig{
+			Base: "file://" + t.TempDir(),
+		},
+	}
+
+	sa, err := Create(db, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = sa.SyncAccess(0, AccessChange{Group: Users, Access: ReadWrite, UserId: alicePublic})
@@ -45,7 +59,7 @@ func TestAccessTwoUsers(t *testing.T) {
 
 	bob := security.NewPrivateIDMust()
 	bobPublic := bob.PublicIDMust()
-	sb, err := Open(db, bob, storeUrl, alicePublic)
+	sb, err := Open(db, bob, storeConfig, alicePublic)
 	core.TestErr(t, err, "Open failed: %v")
 
 	groups, err := sb.GetGroups(bobPublic)
@@ -57,7 +71,7 @@ func TestAccessTwoUsers(t *testing.T) {
 	err = sa.SyncAccess(0, AccessChange{Group: Users, Access: ReadWrite, UserId: bob.PublicIDMust()})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
-	sb, err = Open(db, bob, storeUrl, alice.PublicIDMust())
+	sb, err = Open(db, bob, storeConfig, alice.PublicIDMust())
 	core.TestErr(t, err, "Open failed: %v")
 
 	groups, err = sb.GetGroups(bobPublic)

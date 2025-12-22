@@ -8,20 +8,21 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/storage"
 )
 
 func TestStashSynchronize(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	// Setup a test DB (in-memory)
-	db1 := sqlx.NewTestDB(t, "stash1.db", "")
+	db1 := sqlx.NewTestDB(t, "vault1.db", "")
 	defer db1.Close()
 
-	// Create a test stash
+	// Create a test vault
 	alice, _ := security.NewPrivateID()
 	bob, _ := security.NewPrivateID()
-	storeUrl := "file://" + t.TempDir()
+	storeConfig := storage.LoadTestConfig(t, "test")
 
-	s, err := Create(db1, alice, storeUrl, Config{})
+	s, err := Create(db1, alice, storeConfig, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SetAttribute(0, "name", "alice")
@@ -36,20 +37,20 @@ func TestStashSynchronize(t *testing.T) {
 	tmpFile := t.TempDir() + "/simple.txt"
 	os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 
-	// Write a file to the stash
+	// Write a file to the vault
 	file, err := s.Write("simple.txt", tmpFile, Users, nil, 0, nil)
 	core.TestErr(t, err, "Write failed: %v")
 	s.Close()
 
-	// _, err = s.SyncGroups(Users) // Ensure the stash is synchronized before opening
+	// _, err = s.SyncGroups(Users) // Ensure the vault is synchronized before opening
 	// core.TestErr(t, err, "SyncGroups failed: %v")
 	err = s.WaitFiles(file.Id)
 	core.TestErr(t, err, "WaitFiles failed: %v")
 
-	db2 := sqlx.NewTestDB(t, "stash2.db", "")
+	db2 := sqlx.NewTestDB(t, "vault2.db", "")
 	defer db2.Close()
 
-	s, err = Open(db2, bob, storeUrl, alice.PublicIDMust())
+	s, err = Open(db2, bob, storeConfig, alice.PublicIDMust())
 	core.TestErr(t, err, "Open failed: %v")
 
 	groups, err := s.GetGroups(bob.PublicIDMust())

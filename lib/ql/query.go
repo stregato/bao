@@ -1,4 +1,4 @@
-package bao_ql
+package ql
 
 import (
 	"github.com/stregato/bao/lib/core"

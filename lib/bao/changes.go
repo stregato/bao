@@ -13,11 +13,11 @@ import (
 type ChangeType uint8
 
 const (
-	config       ChangeType = iota // Changing settings for the stash
+	config       ChangeType = iota // Changing settings for the vault
 	activeKeySet                   // Active key set for a specific group
 	changeAccess                   // Change access for all users in the group
 	addKey                         // Add a new key for a specific group
-	addAttribute                   // Add a new attribute to the stash
+	addAttribute                   // Add a new attribute to the vault
 )
 
 var changeTypeLabels = []string{
@@ -60,7 +60,7 @@ type Config struct {
 	MaxStorage           int64         `json:"maxStorage"`           // Maximum allowed storage (bytes)
 	SegmentInterval      time.Duration `json:"segmentInterval"`      // Time duration of each batch segment
 	SyncTimeout          time.Duration `json:"syncTimeout"`          // Timeout for sync operations (default 10 minutes)
-	SyncPeriod           time.Duration `json:"dirsSyncPeriod"`       // How often to sync the stash (default no sync)
+	SyncPeriod           time.Duration `json:"dirsSyncPeriod"`       // How often to sync the vault (default no sync)
 	FilesSyncPeriod      time.Duration `json:"filesSyncPeriod"`      // How often to sync files (default 10 minutes)
 	CleanupPeriod        time.Duration `json:"cleanupPeriod"`        // How often to run housekeeping (default 1 hour)
 	BlockChainSyncPeriod time.Duration `json:"blockChainSyncPeriod"` // How often to sync the blockchain (default 10 minutes)
@@ -80,7 +80,7 @@ type AddKey struct {
 	EncryptedKeys map[security.PublicID][]byte // Keys encrypted with the user's public key. Null if no new key is required.
 }
 
-// AddAttribute represents an attribute to be added to the stash.
+// AddAttribute represents an attribute to be added to the vault.
 type AddAttribute struct {
 	Name  string // Attribute name
 	Value string // Attribute value
@@ -101,7 +101,7 @@ func (s *Bao) stageBlockChange(blockChange BlockChange) error {
 }
 
 func (s *Bao) getStagedChanges() ([]BlockChange, error) {
-	core.Start("stash %s", s.Id)
+	core.Start("vault %s", s.Id)
 	var changes []BlockChange
 	rows, err := s.DB.Query("GET_STAGED_CHANGES", sqlx.Args{"store": s.Id})
 	if err != nil {
@@ -207,7 +207,7 @@ func (a *AddAttribute) Apply(s *Bao, author security.PublicID) error {
 // 	case settings:
 // 		// Handle settings change
 // 		var settings Config
-// 		// Only the stash author can change settings
+// 		// Only the vault author can change settings
 // 		if author == s.Author {
 // 			err := msgpack.Unmarshal(blockChange.Payload, &settings)
 // 			if err != nil {
@@ -238,7 +238,7 @@ func (a *AddAttribute) Apply(s *Bao, author security.PublicID) error {
 func (s *Bao) hasAdminAccess(id security.PublicID, group Group) (bool, error) {
 	core.Start("checking admin access for user %s in group %s", id, group)
 	if id == s.Author {
-		core.End("user %s is author of stash", id)
+		core.End("user %s is author of vault", id)
 		return true, nil // Author always has admin access
 	}
 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -19,31 +18,23 @@ type _memoryFile struct {
 }
 
 type Memory struct {
-	url  string
+	id   string
 	data map[string]_memoryFile
 }
 
 var MemoryStores = map[string]*Memory{}
 
-func OpenMemory(connectionUrl string) (Store, error) {
-	u, err := url.Parse(connectionUrl)
-	if err != nil {
-		return nil, core.Errorw("invalid URL", err)
-	}
-	if u.Scheme != "mem" {
-		return nil, os.ErrInvalid
-	}
-
-	if m, ok := MemoryStores[connectionUrl]; ok {
+func OpenMemory(id string) (Store, error) {
+	if m, ok := MemoryStores[id]; ok {
 		return m, nil
 	}
-	m := &Memory{url: connectionUrl, data: map[string]_memoryFile{}}
-	MemoryStores[connectionUrl] = m
+	m := &Memory{id: id, data: map[string]_memoryFile{}}
+	MemoryStores[id] = m
 	return m, nil
 }
 
 func (m *Memory) ID() string {
-	return m.url
+	return m.id
 }
 
 func (m *Memory) Read(name string, rang *Range, dest io.Writer, progress chan int64) error {
@@ -167,5 +158,5 @@ func (m *Memory) Describe() Description {
 }
 
 func (m *Memory) String() string {
-	return m.url
+	return m.id
 }

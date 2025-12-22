@@ -14,8 +14,8 @@ import (
 )
 
 func TestS3(t *testing.T) {
-	credentials := LoadTestURLs()
-	testStore(t, credentials["s3"])
+	c := LoadTestConfig(t, "s3")
+	testStore(t, c)
 }
 
 // func TestWebdav(t *testing.T) {
@@ -24,12 +24,12 @@ func TestS3(t *testing.T) {
 // }
 
 func TestLocal(t *testing.T) {
-	tmpDir := os.TempDir()
-	testStore(t, "file://"+tmpDir)
+	c := LoadTestConfig(t, "test")
+	testStore(t, c)
 }
 
-func testStore(t *testing.T, url string) {
-	s, err := Open(url)
+func testStore(t *testing.T, c StoreConfig) {
+	s, err := Open(c)
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer s.Close()
 

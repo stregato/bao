@@ -32,7 +32,7 @@ func (s *Bao) Close() error {
 	}
 	openedStashesMu.Unlock()
 
-	core.Info("successfully closed stash %s", s.Id)
+	core.Info("successfully closed vault %s", s.Id)
 	core.End("")
 	return nil
 }

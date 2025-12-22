@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"time"
@@ -23,30 +22,35 @@ type SFTP struct {
 	id   string
 }
 
+type SFTPConfig struct {
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	PrivateKey string `json:"keyFile"`
+	BasePath   string `json:"basePath"`
+	Verbose    int    `json:"verbose"`
+}
+
 // OpenSFTP create a new Exchanger. The url is in the format sftp://user:pass@host:port/basepath?k=base64encodedprivatekey
-func OpenSFTP(connectionUrl string) (Store, error) {
-	u, err := url.Parse(connectionUrl)
-	if err != nil {
-		return nil, err
-	}
+func OpenSFTP(id string, c SFTPConfig) (Store, error) {
 
-	addr := u.Host
-	if u.Port() == "" {
+	addr := c.Host
+	if c.Port == 0 {
 		addr = fmt.Sprintf("%s:22", addr)
+	} else {
+		addr = fmt.Sprintf("%s:%d", addr, c.Port)
 	}
 
-	params := u.Query()
-
-	var id string
 	var auth []ssh.AuthMethod
 
-	password, hasPassword := u.User.Password()
-	if hasPassword {
+	password := c.Password
+	if password != "" {
 		auth = append(auth, ssh.Password(password))
 	}
 
-	if key := params.Get("k"); key != "" {
-		pkey, err := base64.StdEncoding.DecodeString(key)
+	if c.PrivateKey != "" {
+		pkey, err := base64.StdEncoding.DecodeString(c.PrivateKey)
 		if err != nil {
 			return nil, core.Errorw("private key is invalid", err)
 		}
@@ -57,32 +61,31 @@ func OpenSFTP(connectionUrl string) (Store, error) {
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
 	}
-	id = fmt.Sprintf("sftp://%s/%s", addr, u.Path)
 
 	if len(auth) == 0 {
 		return nil, fmt.Errorf("no auth method provided for sftp connection to %s", addr)
 	}
 
 	cc := &ssh.ClientConfig{
-		User:            u.User.Username(),
+		User:            c.Username,
 		Auth:            auth,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	client, err := ssh.Dial("tcp", addr, cc)
+	dial, err := ssh.Dial("tcp", addr, cc)
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to %s in NewSFTP: %v", addr, err)
 	}
-	c, err := sftp.NewClient(client)
+	client, err := sftp.NewClient(dial)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create a sftp client for %s: %v", addr, err)
 	}
 
-	base := u.Path
+	base := c.BasePath
 	if base == "" {
 		base = "/"
 	}
-	return &SFTP{c, base, id}, nil
+	return &SFTP{client, base, id}, nil
 }
 
 func (s *SFTP) ID() string {

@@ -12,6 +12,6 @@ export 'src/db.dart';
 export 'src/loader.dart';
 export 'src/security.dart';
 export 'src/error_screen.dart';
-
+export 'src/storage.dart';
 
 // TODO: Export any libraries intended for clients of this package.

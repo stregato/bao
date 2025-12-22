@@ -6,16 +6,24 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/storage"
 )
 
 func TestAttributes(t *testing.T) {
-	db := sqlx.NewTestDB(t, "stash.db", "")
+	db := sqlx.NewTestDB(t, "vault.db", "")
 	alice := security.NewPrivateIDMust()
 
 	tmpFolder := t.TempDir()
-	storeUrl := "file://" + tmpFolder
-	s, err := Create(db, alice, storeUrl, Config{})
-	core.TestErr(t, err, "cannot create stash")
+	storeConfig := storage.StoreConfig{
+		Id:   "local-test-store",
+		Type: "local",
+		Local: storage.LocalConfig{
+			Base: "file://" + tmpFolder,
+		},
+	}
+
+	s, err := Create(db, alice, storeConfig, Config{})
+	core.TestErr(t, err, "cannot create vault")
 	defer s.Close()
 
 	err = s.SetAttribute(0, "attr1", "value1")

@@ -147,7 +147,7 @@ dart: lib
 clean:
 	echo "Cleaning up"
 	rm -rf $(BUILD_PATH)
-	rm -rf bindings/py/pbao/_libs
+	rm -rf bindings/py/baolib/_libs
 
 release:
 	@read -p "Enter the release name: " release_name; \

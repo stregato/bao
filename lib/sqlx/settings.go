@@ -4,7 +4,7 @@ import (
 	"github.com/stregato/bao/lib/core"
 )
 
-// SetSetting sets a setting in the stash_settings table.
+// SetSetting sets a setting in the vault_settings table.
 func (db *DB) SetSetting(id, s string, i int64, f float64, b []byte) error {
 	_, err := db.Exec("SET_SETTING", Args{"id": id,
 		"valueAsString": s, "valueAsInt": i,
@@ -25,7 +25,7 @@ func (db *DB) SetSetting(id, s string, i int64, f float64, b []byte) error {
 	return err
 }
 
-// GetSetting retrieves a setting from the stash_settings table.
+// GetSetting retrieves a setting from the vault_settings table.
 func (db *DB) GetSetting(id string) (s string, i int64, f float64, b []byte, err error) {
 	db.settingCacheMu.RLock()
 	defer db.settingCacheMu.RUnlock()

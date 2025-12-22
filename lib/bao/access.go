@@ -22,9 +22,9 @@ func (s *Bao) SyncAccess(options IOOption, accessChanges ...AccessChange) error 
 	}
 
 	if s.store == nil {
-		store, err := storage.Open(s.Url)
+		store, err := storage.Open(s.StoreConfig)
 		if err != nil {
-			return core.Errorw("cannot open store with connection URL %s", s.Url, err)
+			return core.Errorw("cannot open store with connection URL %s", s.StoreConfig, err)
 		}
 		s.store = store
 	}
@@ -87,7 +87,7 @@ func (s *Bao) convertToChanges(group Group, accessChanges []AccessChange) ([]Cha
 		}
 	}
 	if !adminRight {
-		return nil, core.Errorw("only the stash creator or an admin can change the access rights")
+		return nil, core.Errorw("only the vault creator or an admin can change the access rights")
 	}
 
 	keysForScope, err := s.getKeysForScope(group)
