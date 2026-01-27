@@ -54,75 +54,96 @@ void freeNativePointers() {
 final Map<String, Handler> _handlers = <String, Handler>{
   'bao_setLogLevel': (List<Object?> args) =>
       Function.apply(libSetLogLevel, args),
-  'bao_setHttpLog': (List<Object?> args) =>
+  'bao_core_setHttpLog': (List<Object?> args) =>
       Function.apply(libSetHttpLog, args),
-  'bao_getRecentLog': (List<Object?> args) =>
+  'bao_core_getRecentLog': (List<Object?> args) =>
       Function.apply(libGetRecentLog, args),
   'bao_snapshot': (List<Object?> args) => Function.apply(libSnapshot, args),
   'bao_test': (List<Object?> args) => Function.apply(libTestFun, args),
-  'bao_newPrivateID': (List<Object?> args) =>
+  'bao_security_newPrivateID': (List<Object?> args) =>
       Function.apply(libNewPrivateID, args),
-  'bao_publicID': (List<Object?> args) => Function.apply(libPublicID, args),
-  'bao_decodeID': (List<Object?> args) => Function.apply(libDecodeID, args),
-  'bao_ecEncrypt': (List<Object?> args) => Function.apply(libEcEncrypt, args),
-  'bao_ecDecrypt': (List<Object?> args) => Function.apply(libEcDecrypt, args),
-  'bao_aesEncrypt': (List<Object?> args) =>
+  'bao_security_publicID': (List<Object?> args) =>
+      Function.apply(libPublicID, args),
+  'bao_security_newKeyPair': (List<Object?> args) =>
+      Function.apply(libNewKeyPair, args),
+  'bao_security_decodeID': (List<Object?> args) =>
+      Function.apply(libDecodeID, args),
+  'bao_security_ecEncrypt': (List<Object?> args) =>
+      Function.apply(libEcEncrypt, args),
+  'bao_security_ecDecrypt': (List<Object?> args) =>
+      Function.apply(libEcDecrypt, args),
+  'bao_security_aesEncrypt': (List<Object?> args) =>
       Function.apply(libAesEncrypt, args),
-  'bao_aesDecrypt': (List<Object?> args) =>
+  'bao_security_aesDecrypt': (List<Object?> args) =>
       Function.apply(libAesDecrypt, args),
-  'bao_openDB': (List<Object?> args) => Function.apply(libOpenDB, args),
-  'bao_closeDB': (List<Object?> args) => Function.apply(libCloseDB, args),
-  'bao_dbQuery': (List<Object?> args) => Function.apply(libDbQuery, args),
-  'bao_dbExec': (List<Object?> args) => Function.apply(libDbExec, args),
-  'bao_dbFetch': (List<Object?> args) => Function.apply(libDbFetch, args),
-  'bao_dbFetchOne': (List<Object?> args) =>
+  'bao_db_open': (List<Object?> args) => Function.apply(libOpenDB, args),
+  'bao_db_close': (List<Object?> args) => Function.apply(libCloseDB, args),
+  'bao_db_query': (List<Object?> args) => Function.apply(libDbQuery, args),
+  'bao_db_exec': (List<Object?> args) => Function.apply(libDbExec, args),
+  'bao_db_fetch': (List<Object?> args) => Function.apply(libDbFetch, args),
+  'bao_db_fetch_one': (List<Object?> args) =>
       Function.apply(libDbFetchOne, args),
-  'bao_create': (List<Object?> args) => Function.apply(libBaoCreate, args),
-  'bao_open': (List<Object?> args) => Function.apply(libBaoOpen, args),
-  'bao_close': (List<Object?> args) => Function.apply(libBaoClose, args),
-  'bao_syncAccess': (List<Object?> args) =>
+  'bao_store_open': (List<Object?> args) => Function.apply(libStoreOpen, args),
+  'bao_store_close': (List<Object?> args) =>
+      Function.apply(libStoreClose, args),
+  'bao_store_readDir': (List<Object?> args) =>
+      Function.apply(libStoreReadDir, args),
+  'bao_store_stat': (List<Object?> args) => Function.apply(libStoreStat, args),
+  'bao_store_delete': (List<Object?> args) =>
+      Function.apply(libStoreDelete, args),
+  'bao_vault_create': (List<Object?> args) =>
+      Function.apply(libBaoCreate, args),
+  'bao_vault_open': (List<Object?> args) => Function.apply(libBaoOpen, args),
+  'bao_vault_close': (List<Object?> args) => Function.apply(libBaoClose, args),
+  'bao_vault_syncAccess': (List<Object?> args) =>
       Function.apply(libBaoSyncAccess, args),
-  'bao_getAccess': (List<Object?> args) =>
+  'bao_vault_getAccesses': (List<Object?> args) =>
+      Function.apply(libBaoGetAccesses, args),
+  'bao_vault_getAccess': (List<Object?> args) =>
       Function.apply(libBaoGetAccess, args),
-  'bao_getGroups': (List<Object?> args) =>
-      Function.apply(libBaoGetGroups, args),
-  'bao_waitFiles': (List<Object?> args) =>
+  'bao_vault_waitFiles': (List<Object?> args) =>
       Function.apply(libBaoWaitFiles, args),
-  'bao_listGroups': (List<Object?> args) =>
-      Function.apply(libBaoListGroups, args),
-  'bao_sync': (List<Object?> args) => Function.apply(libBaoSync, args),
-  'bao_setAttribute': (List<Object?> args) =>
+  'bao_vault_sync': (List<Object?> args) => Function.apply(libBaoSync, args),
+  'bao_vault_setAttribute': (List<Object?> args) =>
       Function.apply(libBaoSetAttribute, args),
-  'bao_getAttribute': (List<Object?> args) =>
+  'bao_vault_getAttribute': (List<Object?> args) =>
       Function.apply(libBaoGetAttribute, args),
-  'bao_getAttributes': (List<Object?> args) =>
+  'bao_vault_getAttributes': (List<Object?> args) =>
       Function.apply(libBaoGetAttributes, args),
-  'bao_readDir': (List<Object?> args) =>
+  'bao_vault_readDir': (List<Object?> args) =>
       Function.apply(libBaoReadDir, args),
-  'bao_stat': (List<Object?> args) => Function.apply(libBaoStat, args),
-  'bao_read': (List<Object?> args) => Function.apply(libBaoRead, args),
-  'bao_write': (List<Object?> args) => Function.apply(libBaoWrite, args),
-  'bao_delete': (List<Object?> args) => Function.apply(libBaoDelete, args),
-  'baoql_layer': (List<Object?> args) =>
+  'bao_vault_stat': (List<Object?> args) => Function.apply(libBaoStat, args),
+  'bao_vault_read': (List<Object?> args) => Function.apply(libBaoRead, args),
+  'bao_vault_write': (List<Object?> args) => Function.apply(libBaoWrite, args),
+  'bao_vault_delete': (List<Object?> args) =>
+      Function.apply(libBaoDelete, args),
+  'bao_vault_allocatedSize': (List<Object?> args) =>
+      Function.apply(libBaoAllocatedSize, args),
+  'bao_replica_open': (List<Object?> args) =>
       Function.apply(libSqlLayerSqlLayer, args),
-  'baoql_closeRows': (List<Object?> args) =>
+  'bao_replica_closeRows': (List<Object?> args) =>
       Function.apply(libSqlLayerCloseRows, args),
-  'baoql_exec': (List<Object?> args) =>
+  'bao_replica_exec': (List<Object?> args) =>
       Function.apply(libSqlLayerExec, args),
-  'baoql_query': (List<Object?> args) =>
+  'bao_replica_query': (List<Object?> args) =>
       Function.apply(libSqlLayerQuery, args),
-  'baoql_fetch': (List<Object?> args) =>
+  'bao_replica_fetch': (List<Object?> args) =>
       Function.apply(libSqlLayerFetch, args),
-  'baoql_fetchOne': (List<Object?> args) =>
+  'bao_replica_fetchOne': (List<Object?> args) =>
       Function.apply(libSqlLayerFetchOne, args),
-  'baoql_sync_tables': (List<Object?> args) =>
+  'bao_replica_sync': (List<Object?> args) =>
       Function.apply(libSqlLayerSyncTables, args),
-  'baoql_cancel': (List<Object?> args) =>
+  'bao_replica_cancel': (List<Object?> args) =>
       Function.apply(libSqlLayerCancel, args),
-  'mailbox_send': (List<Object?> args) => Function.apply(libMailboxSend, args),
-  'mailbox_receive': (List<Object?> args) =>
+  'bao_replica_next': (List<Object?> args) =>
+      Function.apply(libSqlLayerNext, args),
+  'bao_replica_current': (List<Object?> args) =>
+      Function.apply(libSqlLayerCurrent, args),
+  'bao_mailbox_send': (List<Object?> args) =>
+      Function.apply(libMailboxSend, args),
+  'bao_mailbox_receive': (List<Object?> args) =>
       Function.apply(libMailboxReceive, args),
-  'mailbox_download': (List<Object?> args) =>
+  'bao_mailbox_download': (List<Object?> args) =>
       Function.apply(libMailboxDownload, args),
 };
 
@@ -139,7 +160,8 @@ late Args libTestFun;
 
 // Id functions
 late Args libNewPrivateID;
-late ArgsS libPublicID;
+late Args libNewKeyPair;
+late Args libPublicID;
 late ArgsS libDecodeID;
 late ArgsSD libEcEncrypt;
 late ArgsSD libEcDecrypt;
@@ -155,27 +177,34 @@ late ArgsiSS libDbExec;
 late ArgsiSSi libDbFetch;
 late ArgsiSS libDbFetchOne;
 
+// Store functions
+late ArgsS libStoreOpen;
+late Argsi libStoreClose;
+late ArgsiSS libStoreReadDir;
+late ArgsiS libStoreStat;
+late ArgsiS libStoreDelete;
+
 // Bao functions
-late ArgsiSSS libBaoCreate;
-late ArgsiSSS libBaoOpen;
+late Argssiis libBaoCreate;
+late Argssiiss libBaoOpen;
 late Argsi libBaoClose;
 late Argsiis libBaoSyncAccess;
-late ArgsiS libBaoGetAccess;
-late ArgsiS libBaoGetGroups;
+late Argsi libBaoGetAccesses;
+late Argsi libBaoGetAccess;
 late ArgsiS libBaoWaitFiles;
-late Argsi libBaoListGroups;
-late ArgsiS libBaoSync;
-late ArgsiiSS libBaoSetAttribute;
+late Argsi libBaoSync;
+late Argsiiss libBaoSetAttribute;
 late ArgsiSS libBaoGetAttribute;
 late ArgsiS libBaoGetAttributes;
 late ArgsiSiii libBaoReadDir;
 late ArgsiS libBaoStat;
 late ArgsiSSi libBaoRead;
-late ArgsiSSDSi libBaoWrite;
+late ArgsiSSDi libBaoWrite;
 late ArgsiSi libBaoDelete;
+late Argsi libBaoAllocatedSize;
 
 // SQL Layer functions
-late ArgsiSi libSqlLayerSqlLayer;
+late ArgsiI libSqlLayerSqlLayer;
 late ArgsiSS libSqlLayerExec;
 late ArgsiSS libSqlLayerQuery;
 late ArgsiSSi libSqlLayerFetch;
@@ -187,71 +216,95 @@ late Argsi libSqlLayerCurrent;
 late Argsi libSqlLayerCloseRows;
 
 // Mailbox functions
-late ArgsiSSS libMailboxSend;
+late ArgsiSS libMailboxSend;
 late ArgsiSii libMailboxReceive;
 late ArgsiSSiS libMailboxDownload;
 
 void loadFunctions(DynamicLibrary lib) {
   freeC = lib.lookupFunction<FreeC, FreeCDart>('free');
   libSetLogLevel = lib.lookupFunction<ArgsS, ArgsS>('bao_setLogLevel');
-  libSetHttpLog = lib.lookupFunction<ArgsS, ArgsS>('bao_setHttpLog');
-  libGetRecentLog = lib.lookupFunction<ArgsI, Argsi>('bao_getRecentLog');
+  libSetHttpLog = lib.lookupFunction<ArgsS, ArgsS>('bao_core_setHttpLog');
+  libGetRecentLog = lib.lookupFunction<ArgsI, Argsi>('bao_core_getRecentLog');
   libSnapshot = lib.lookupFunction<Args, Args>('bao_snapshot');
   libTestFun = lib.lookupFunction<Args, Args>('bao_test');
 
-  libNewPrivateID = lib.lookupFunction<Args, Args>('bao_newPrivateID');
-  libPublicID = lib.lookupFunction<ArgsS, ArgsS>('bao_publicID');
-  libDecodeID = lib.lookupFunction<ArgsS, ArgsS>('bao_decodeID');
-  libEcEncrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_ecEncrypt');
-  libEcDecrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_ecDecrypt');
-  libAesEncrypt = lib.lookupFunction<ArgsSDD, ArgsSDD>('bao_aesEncrypt');
-  libAesDecrypt = lib.lookupFunction<ArgsSDD, ArgsSDD>('bao_aesDecrypt');
+  libNewPrivateID =
+      lib.lookupFunction<Args, Args>('bao_security_newPrivateID');
+  libNewKeyPair =
+      lib.lookupFunction<Args, Args>('bao_security_newKeyPair');
+  libPublicID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_publicID');
+  libDecodeID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_decodeID');
+  libEcEncrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecEncrypt');
+  libEcDecrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecDecrypt');
+  libAesEncrypt =
+      lib.lookupFunction<ArgsSDD, ArgsSDD>('bao_security_aesEncrypt');
+  libAesDecrypt =
+      lib.lookupFunction<ArgsSDD, ArgsSDD>('bao_security_aesDecrypt');
 
-  libOpenDB = lib.lookupFunction<ArgsSSS, ArgsSSS>("bao_openDB");
-  libCloseDB = lib.lookupFunction<ArgsI, Argsi>("bao_closeDB");
-  libDbQuery = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_dbQuery");
-  libDbExec = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_dbExec");
-  libDbFetch = lib.lookupFunction<ArgsISSI, ArgsiSSi>("bao_dbFetch");
-  libDbFetchOne = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_dbFetchOne");
-  libBaoCreate = lib.lookupFunction<ArgsISSS, ArgsiSSS>("bao_create");
-  libBaoOpen = lib.lookupFunction<ArgsISSS, ArgsiSSS>("bao_open");
-  libBaoClose = lib.lookupFunction<ArgsI, Argsi>("bao_close");
-  libBaoSyncAccess = lib.lookupFunction<ArgsIiS, Argsiis>("bao_syncAccess");
-  libBaoGetAccess = lib.lookupFunction<ArgsIS, ArgsiS>("bao_getAccess");
-  libBaoGetGroups = lib.lookupFunction<ArgsIS, ArgsiS>("bao_getGroups");
-  libBaoWaitFiles = lib.lookupFunction<ArgsIS, ArgsiS>("bao_waitFiles");
-  libBaoListGroups = lib.lookupFunction<ArgsI, Argsi>("bao_listGroups");
-  libBaoSync = lib.lookupFunction<ArgsIS, ArgsiS>("bao_sync");
+  libOpenDB = lib.lookupFunction<ArgsSSS, ArgsSSS>("bao_db_open");
+  libCloseDB = lib.lookupFunction<ArgsI, Argsi>("bao_db_close");
+  libDbQuery = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_db_query");
+  libDbExec = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_db_exec");
+  libDbFetch = lib.lookupFunction<ArgsISSIi, ArgsiSSi>("bao_db_fetch");
+  libDbFetchOne =
+      lib.lookupFunction<ArgsISS, ArgsiSS>("bao_db_fetch_one");
+
+  libStoreOpen = lib.lookupFunction<ArgsS, ArgsS>('bao_store_open');
+  libStoreClose = lib.lookupFunction<ArgsI, Argsi>('bao_store_close');
+  libStoreReadDir = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_store_readDir');
+  libStoreStat = lib.lookupFunction<ArgsIS, ArgsiS>('bao_store_stat');
+  libStoreDelete = lib.lookupFunction<ArgsIS, ArgsiS>('bao_store_delete');
+
+  libBaoCreate =
+      lib.lookupFunction<ArgsSSIIS, Argssiis>("bao_vault_create");
+  libBaoOpen =
+      lib.lookupFunction<ArgsSSIISS, Argssiiss>("bao_vault_open");
+  libBaoClose = lib.lookupFunction<ArgsI, Argsi>("bao_vault_close");
+  libBaoSyncAccess =
+      lib.lookupFunction<ArgsIiS, Argsiis>("bao_vault_syncAccess");
+  libBaoGetAccesses =
+      lib.lookupFunction<ArgsI, Argsi>("bao_vault_getAccesses");
+  libBaoGetAccess = lib.lookupFunction<ArgsI, Argsi>("bao_vault_getAccess");
+  libBaoWaitFiles =
+      lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_waitFiles");
+  libBaoSync = lib.lookupFunction<ArgsI, Argsi>("bao_vault_sync");
   libBaoSetAttribute =
-      lib.lookupFunction<ArgsIISS, ArgsiiSS>("bao_setAttribute");
+      lib.lookupFunction<ArgsIiSS, Argsiiss>("bao_vault_setAttribute");
   libBaoGetAttribute =
-      lib.lookupFunction<ArgsISS, ArgsiSS>("bao_getAttribute");
+      lib.lookupFunction<ArgsISS, ArgsiSS>("bao_vault_getAttribute");
   libBaoGetAttributes =
-      lib.lookupFunction<ArgsIS, ArgsiS>("bao_getAttributes");
-  libBaoReadDir = lib.lookupFunction<ArgsISIII, ArgsiSiii>("bao_readDir");
-  libBaoStat = lib.lookupFunction<ArgsIS, ArgsiS>("bao_stat");
-  libBaoRead = lib.lookupFunction<ArgsISSI, ArgsiSSi>("bao_read");
-  libBaoWrite = lib.lookupFunction<ArgsISSDSI, ArgsiSSDSi>("bao_write");
-  libBaoDelete = lib.lookupFunction<ArgsISI, ArgsiSi>("bao_delete");
+      lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_getAttributes");
+  libBaoReadDir =
+      lib.lookupFunction<ArgsISIIi, ArgsiSiii>("bao_vault_readDir");
+  libBaoStat = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_stat");
+  libBaoRead = lib.lookupFunction<ArgsISSI, ArgsiSSi>("bao_vault_read");
+    libBaoWrite = lib.lookupFunction<ArgsISSDI, ArgsiSSDi>("bao_vault_write");
+    libBaoDelete = lib.lookupFunction<ArgsISi, ArgsiSi>("bao_vault_delete");
+  libBaoAllocatedSize =
+      lib.lookupFunction<ArgsI, Argsi>("bao_vault_allocatedSize");
 
-  libSqlLayerSqlLayer =
-      lib.lookupFunction<ArgsISI, ArgsiSi>('baoql_layer');
-  libSqlLayerExec = lib.lookupFunction<ArgsISS, ArgsiSS>('baoql_exec');
-  libSqlLayerQuery = lib.lookupFunction<ArgsISS, ArgsiSS>('baoql_query');
-  libSqlLayerFetch = lib.lookupFunction<ArgsISSI, ArgsiSSi>('baoql_fetch');
+    libSqlLayerSqlLayer = lib.lookupFunction<ArgsIi, ArgsiI>('bao_replica_open');
+  libSqlLayerExec = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_exec');
+  libSqlLayerQuery = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_query');
+  libSqlLayerFetch =
+      lib.lookupFunction<ArgsISSIi, ArgsiSSi>('bao_replica_fetch');
   libSqlLayerFetchOne =
-      lib.lookupFunction<ArgsISS, ArgsiSS>('baoql_fetchOne');
+      lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_fetchOne');
   libSqlLayerSyncTables =
-      lib.lookupFunction<ArgsI, Argsi>('baoql_sync_tables');
-  libSqlLayerCancel = lib.lookupFunction<ArgsI, Argsi>('baoql_cancel');
-  libSqlLayerNext = lib.lookupFunction<ArgsI, Argsi>('baoql_next');
-  libSqlLayerCurrent = lib.lookupFunction<ArgsI, Argsi>('baoql_current');
-  libSqlLayerCloseRows = lib.lookupFunction<ArgsI, Argsi>('baoql_closeRows');
+      lib.lookupFunction<ArgsI, Argsi>('bao_replica_sync');
+  libSqlLayerCancel = lib.lookupFunction<ArgsI, Argsi>('bao_replica_cancel');
+  libSqlLayerNext = lib.lookupFunction<ArgsI, Argsi>('bao_replica_next');
+  libSqlLayerCurrent =
+      lib.lookupFunction<ArgsI, Argsi>('bao_replica_current');
+  libSqlLayerCloseRows =
+      lib.lookupFunction<ArgsI, Argsi>('bao_replica_closeRows');
 
-  libMailboxSend = lib.lookupFunction<ArgsISSS, ArgsiSSS>('mailbox_send');
-  libMailboxReceive = lib.lookupFunction<ArgsISII, ArgsiSii>('mailbox_receive');
+  libMailboxSend =
+      lib.lookupFunction<ArgsISS, ArgsiSS>('bao_mailbox_send');
+  libMailboxReceive =
+      lib.lookupFunction<ArgsISII, ArgsiSii>('bao_mailbox_receive');
   libMailboxDownload =
-      lib.lookupFunction<ArgsISSIiS, ArgsiSSiS>('mailbox_download');
+      lib.lookupFunction<ArgsISSIiS, ArgsiSSiS>('bao_mailbox_download');
 }
 
 // ---- Worker entry: opens lib once, caches lookups once

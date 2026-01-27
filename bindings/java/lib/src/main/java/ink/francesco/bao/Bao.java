@@ -20,19 +20,20 @@ public class Bao {
     String userId;
     String userPublicId;
     String url;
+    Map<String, Object> storeConfig = new HashMap<>();
     String author;
     Map<String, Object> config = new HashMap<>();
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    static public Bao create(DB db, String identity, String url, Map<String, Object> settings) throws Exception {
-        Result r = BaoLibrary.instance.bao_create(db.hnd, identity, url, mapper.writeValueAsString(settings));
+    static public Bao create(String identity, DB db, Store store, Map<String, Object> settings) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_create(identity, db.hnd, store.hnd, mapper.writeValueAsString(settings));
         r.check();
         return fromResult(r);
     }
 
-    static public Bao open(DB db, String identity, String url, String author) throws Exception {
-        Result r = BaoLibrary.instance.bao_open(db.hnd, identity, url, author);
+    static public Bao open(String identity, DB db, Store store, Map<String, Object> settings, String author) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_open(identity, db.hnd, store.hnd, mapper.writeValueAsString(settings), author);
         r.check();
         return fromResult(r);
     }
@@ -45,6 +46,10 @@ public class Bao {
         s.userId = (String) m.getOrDefault("userId", "");
         s.userPublicId = (String) m.getOrDefault("userPublicId", "");
         s.url = (String) m.getOrDefault("url", "");
+        Object sc = m.get("storeConfig");
+        if (sc instanceof Map<?, ?> scm) {
+            scm.forEach((k, v) -> s.storeConfig.put(String.valueOf(k), v));
+        }
         s.author = (String) m.getOrDefault("author", "");
         Object c = m.get("config");
         if (c instanceof Map<?, ?> cm) {
@@ -54,11 +59,11 @@ public class Bao {
     }
 
     public void close()  {
-        BaoLibrary.instance.bao_close(hnd);
+        BaoLibrary.instance.bao_vault_close(hnd);
     }
 
     public long allocatedSize() {
-        Result r = BaoLibrary.instance.bao_allocatedSize(hnd);
+        Result r = BaoLibrary.instance.bao_vault_allocatedSize(hnd);
         r.check();
         try {
             return r.obj(Long.class);
@@ -69,17 +74,17 @@ public class Bao {
     }
 
     public void syncAccess(List<AccessChange> changes, long options) throws JsonProcessingException {
-        Result r = BaoLibrary.instance.bao_syncAccess(hnd, options, mapper.writeValueAsString(changes));
+        Result r = BaoLibrary.instance.bao_vault_syncAccess(hnd, options, mapper.writeValueAsString(changes));
         r.check();
     }
 
     public Map<String, Integer> getAccess(String groupName) throws Exception {
-        Result r = BaoLibrary.instance.bao_getAccess(hnd, groupName);
+        Result r = BaoLibrary.instance.bao_vault_getAccess(hnd, groupName);
         return r.map(Integer.class);
     }
 
     public Map<String, Integer> getGroups(String user) throws Exception {
-        Result r = BaoLibrary.instance.bao_getGroups(hnd, user);
+        Result r = BaoLibrary.instance.bao_vault_getGroups(hnd, user);
         return r.map(Integer.class);
     }
 
@@ -89,61 +94,61 @@ public class Bao {
     }
 
     public void waitFiles(List<Long> ids) throws Exception {
-        Result r = BaoLibrary.instance.bao_waitFiles(hnd, mapper.writeValueAsString(ids));
+        Result r = BaoLibrary.instance.bao_vault_waitFiles(hnd, mapper.writeValueAsString(ids));
         r.check();
     }
 
     public List<FileInfo> sync(List<String> groups) throws Exception {
-        Result r = BaoLibrary.instance.bao_sync(hnd, mapper.writeValueAsString(groups));
+        Result r = BaoLibrary.instance.bao_vault_sync(hnd, mapper.writeValueAsString(groups));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> raw = (List<Map<String, Object>>) (List<?>) r.list(Map.class);
         return raw.stream().map(FileInfo::fromMap).toList();
     }
 
     public void setAttribute(String name, String value, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_setAttribute(hnd, options, name, value);
+        Result r = BaoLibrary.instance.bao_vault_setAttribute(hnd, options, name, value);
         r.check();
     }
 
     public String getAttribute(String name, String author) throws Exception {
-        Result r = BaoLibrary.instance.bao_getAttribute(hnd, name, author);
+        Result r = BaoLibrary.instance.bao_vault_getAttribute(hnd, name, author);
         r.check();
         return r.string();
     }
 
     public Map<String, String> getAttributes(String author) throws Exception {
-        Result r = BaoLibrary.instance.bao_getAttributes(hnd, author);
+        Result r = BaoLibrary.instance.bao_vault_getAttributes(hnd, author);
         return r.map(String.class);
     }
 
     public List<FileInfo> readDir(String dir, long sinceSeconds, long fromId, int limit) throws Exception {
-        Result r = BaoLibrary.instance.bao_readDir(hnd, dir, sinceSeconds, fromId, limit);
+        Result r = BaoLibrary.instance.bao_vault_readDir(hnd, dir, sinceSeconds, fromId, limit);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> raw = (List<Map<String, Object>>) (List<?>) r.list(Map.class);
         return raw.stream().map(FileInfo::fromMap).toList();
     }
 
     public FileInfo stat(String name) throws Exception {
-        Result r = BaoLibrary.instance.bao_stat(hnd, name);
+        Result r = BaoLibrary.instance.bao_vault_stat(hnd, name);
         return FileInfo.fromMap(r.map());
     }
 
     public FileInfo read(String name, String dest, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_read(hnd, name, dest, options);
+        Result r = BaoLibrary.instance.bao_vault_read(hnd, name, dest, options);
         return FileInfo.fromMap(r.map());
     }
 
     public FileInfo write(String dest, String group, byte[] attrs, String src, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_write(hnd, dest, src, group, new Data(attrs), options);
+        Result r = BaoLibrary.instance.bao_vault_write(hnd, dest, src, group, new Data(attrs), options);
         return FileInfo.fromMap(r.map());
     }
 
     public void delete(String name, long options) throws Exception {
-        BaoLibrary.instance.bao_delete(hnd, name, options).check();
+        BaoLibrary.instance.bao_vault_delete(hnd, name, options).check();
     }
 
     public SqlLayer sqlLayer(String group, DB db) throws Exception {
-        Result r = BaoLibrary.instance.baoql_layer(hnd, group, (int) db.hnd);
+        Result r = BaoLibrary.instance.bao_replica_open(hnd, group, (int) db.hnd);
         r.check();
         return new SqlLayer(r.hnd);
     }

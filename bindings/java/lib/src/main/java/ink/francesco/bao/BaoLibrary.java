@@ -11,59 +11,65 @@ import com.sun.jna.Platform;
 public interface BaoLibrary extends Library {
 
     Result bao_setLogLevel(String level);
-    Result bao_setHttpLog(String addr);
-    Result bao_getRecentLog(long n);
+    Result bao_core_setHttpLog(String addr);
+    Result bao_core_getRecentLog(long n);
     Result bao_snapshot();
 
-    Result bao_newPrivateID();
-    Result bao_publicID(String privateID);
-    Result bao_decodeID(String encoded);
+    Result bao_security_newPrivateID();
+    Result bao_security_publicID(String privateID);
+    Result bao_security_decodeID(String encoded);
 
-    Result bao_ecEncrypt(String pub, Data data);
-    Result bao_ecDecrypt(String priv, Data data);
-    Result bao_aesEncrypt(String key, Data data, Data iv);
-    Result bao_aesDecrypt(String key, Data data, Data iv);
+    Result bao_security_ecEncrypt(String pub, Data data);
+    Result bao_security_ecDecrypt(String priv, Data data);
+    Result bao_security_aesEncrypt(String key, Data data, Data iv);
+    Result bao_security_aesDecrypt(String key, Data data, Data iv);
 
-    Result bao_openDB(String path);
-    Result bao_closeDB(long dbH);
-    Result bao_dbQuery(long dbH, String key, String argsJson);
-    Result bao_dbExec(long dbH, String key, String argsJson);
-    Result bao_dbFetch(long dbH, String key, String argsJson, int maxRows);
-    Result bao_dbFetchOne(long dbH, String key, String argsJson);
+    Result bao_db_open(String driver, String path, String ddl);
+    Result bao_db_close(long dbH);
+    Result bao_db_query(long dbH, String key, String argsJson);
+    Result bao_db_exec(long dbH, String key, String argsJson);
+    Result bao_db_fetch(long dbH, String key, String argsJson, int maxRows);
+    Result bao_db_fetch_one(long dbH, String key, String argsJson);
 
-    Result bao_create(long dbH, String identity, String url, String settingsJson);
-    Result bao_open(long dbH, String identity, String url, String author);
-    Result bao_close(long baoH);
-    Result bao_syncAccess(long baoH, long options, String changesJson);
-    Result bao_getAccess(long baoH, String groupName);
-    Result bao_getGroups(long baoH, String userId);
+    Result bao_store_open(String configJson);
+    Result bao_store_close(long storeH);
+    Result bao_store_readDir(long storeH, String dir, String filterJson);
+    Result bao_store_stat(long storeH, String path);
+    Result bao_store_delete(long storeH, String path);
+
+    Result bao_vault_create(String identity, long dbH, long storeH, String settingsJson);
+    Result bao_vault_open(String identity, long dbH, long storeH, String settingsJson, String author);
+    Result bao_vault_close(long baoH);
+    Result bao_vault_syncAccess(long baoH, long options, String changesJson);
+    Result bao_vault_getAccess(long baoH, String groupName);
+    Result bao_vault_getGroups(long baoH, String userId);
     Result bao_listGroups(long baoH);
-    Result bao_waitFiles(long baoH, String fileIdsJson);
-    Result bao_sync(long baoH, String groupsJson);
-    Result bao_setAttribute(long baoH, long options, String name, String value);
-    Result bao_getAttribute(long baoH, String name, String author);
-    Result bao_getAttributes(long baoH, String author);
-    Result bao_readDir(long baoH, String dir, long since, long fromId, int limit);
-    Result bao_stat(long baoH, String name);
-    Result bao_read(long baoH, String name, String dest, long options);
-    Result bao_write(long baoH, String dest, String src, String group, Data attrs, long options);
-    Result bao_delete(long baoH, String name, long options);
-    Result bao_allocatedSize(long baoH);
+    Result bao_vault_waitFiles(long baoH, String fileIdsJson);
+    Result bao_vault_sync(long baoH, String groupsJson);
+    Result bao_vault_setAttribute(long baoH, long options, String name, String value);
+    Result bao_vault_getAttribute(long baoH, String name, String author);
+    Result bao_vault_getAttributes(long baoH, String author);
+    Result bao_vault_readDir(long baoH, String dir, long since, long fromId, int limit);
+    Result bao_vault_stat(long baoH, String name);
+    Result bao_vault_read(long baoH, String name, String dest, long options);
+    Result bao_vault_write(long baoH, String dest, String src, String group, Data attrs, long options);
+    Result bao_vault_delete(long baoH, String name, long options);
+    Result bao_vault_allocatedSize(long baoH);
 
-    Result baoql_layer(long baoH, String groupName, int dbHandle);
-    Result baoql_exec(long layerH, String query, String args);
-    Result baoql_query(long layerH, String query, String args);
-    Result baoql_fetch(long rowsH, String dest, String args, int limit);
-    Result baoql_fetchOne(long rowsH, String dest, String args);
-    Result baoql_next(long rowsH);
-    Result baoql_current(long rowsH);
-    Result baoql_closeRows(long rowsH);
-    Result baoql_sync_tables(long layerH);
-    Result baoql_cancel(long layerH);
+    Result bao_replica_open(long baoH, String groupName, int dbHandle);
+    Result bao_replica_exec(long layerH, String query, String args);
+    Result bao_replica_query(long layerH, String query, String args);
+    Result bao_replica_fetch(long rowsH, String dest, String args, int limit);
+    Result bao_replica_fetchOne(long rowsH, String dest, String args);
+    Result bao_replica_next(long rowsH);
+    Result bao_replica_current(long rowsH);
+    Result bao_replica_closeRows(long rowsH);
+    Result bao_replica_sync(long layerH);
+    Result bao_replica_cancel(long layerH);
 
-    Result mailbox_send(long baoH, String dir, String group, String messageJson);
-    Result mailbox_receive(long baoH, String dir, long since, long fromId);
-    Result mailbox_download(long baoH, String dir, String messageJson, int attachmentIndex, String dest);
+    Result bao_mailbox_send(long baoH, String dir, String group, String messageJson);
+    Result bao_mailbox_receive(long baoH, String dir, long since, long fromId);
+    Result bao_mailbox_download(long baoH, String dir, String messageJson, int attachmentIndex, String dest);
     
     static BaoLibrary loadLibrary() {
         String base = "bao";

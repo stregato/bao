@@ -1,19 +1,23 @@
 import 'package:bao/bao.dart';
 
 void main() async {
-  initBaoLibrary();
+  await initBaoLibrary();
 
-  var alice = newPrivateID();
+  var (alice, aliceSecret) = newKeyPair();
+  var (bob, bobSecret) = newKeyPair();
   var db = await DB.defaultDB();
 
-  final storeConfig =
-      StoreConfig.fromLocalUrl('file:///tmp/${publicID(alice)}/sample');
-  var s = await Bao.create(db, alice, storeConfig);
-  var bob = newPrivateID();
+  final storeConfig = StoreConfig(
+    id: 'test',
+    type: 'local',
+    local: LocalConfig(base: '/tmp/${publicID(alice)}/sample'),
+  );
+  var store = await Store.open(storeConfig);
+  var v = await Vault.create(users, alice, db, store);
 
   var bobID = publicID(bob);
-  s.syncAccess([AccessChange(users, accessReadWrite, bobID)]);
-  print(s.getAccess(users));
+  v.syncAccess([AccessChange(bobID, accessReadWrite)]);
+  print(v.getAccess(users));
 
-  s.close();
+  v.close();
 }

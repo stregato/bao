@@ -85,6 +85,10 @@ func StringHash(data []byte) string {
 	return base64.RawURLEncoding.EncodeToString(hash)
 }
 
+func SipHash(data []byte) uint64 {
+	return farm.Hash64(data) &^ (1 << 63)
+}
+
 // DefaultIfZero returns the default value if v is zero value for type T.
 func DefaultIfZero[T comparable](v, def T) T {
 	if v == *new(T) {

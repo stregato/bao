@@ -33,6 +33,14 @@ type PrivateID string
 const PublicIDLenght = 65
 const PrivateIDLenght = 64
 
+func (p *PrivateID) Hash() uint64 {
+	return core.SipHash(p.Bytes())
+}
+
+func (p *PublicID) Hash() uint64 {
+	return core.SipHash(p.Bytes())
+}
+
 func NewPrivateID() (PrivateID, error) {
 	core.Start("generating new private ID")
 	privateCrypt, err := eciesgo.GenerateKey()
@@ -56,6 +64,26 @@ func NewPrivateIDMust() PrivateID {
 		panic(err)
 	}
 	return privateID
+}
+
+func NewKeyPair() (PublicID, PrivateID, error) {
+	privateID, err := NewPrivateID()
+	if err != nil {
+		return "", "", err
+	}
+	publicID, err := privateID.PublicID()
+	if err != nil {
+		return "", "", err
+	}
+	return publicID, privateID, nil
+}
+
+func NewKeyPairMust() (PublicID, PrivateID) {
+	publicID, privateID, err := NewKeyPair()
+	if err != nil {
+		panic(err)
+	}
+	return publicID, privateID
 }
 
 func PrivateIDFromBytes(data []byte) (PrivateID, error) {

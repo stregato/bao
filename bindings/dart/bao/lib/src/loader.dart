@@ -208,6 +208,13 @@ typedef ArgsSS = CResult Function(Pointer<Utf8>, Pointer<Utf8>);
 // Three C strings
 typedef ArgsSSS = CResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 
+// Two strings, two 64-bit ints, one string
+typedef ArgsSSIIS = CResult Function(
+  Pointer<Utf8>, Pointer<Utf8>, Int64, Int64, Pointer<Utf8>);
+// Two strings, two 64-bit ints, two strings
+typedef ArgsSSIISS = CResult Function(Pointer<Utf8>, Pointer<Utf8>, Int64,
+  Int64, Pointer<Utf8>, Pointer<Utf8>);
+
 typedef ArgsIS = CResult Function(Int64, Pointer<Utf8>);
 typedef ArgsiS = CResult Function(int, Pointer<Utf8>);
 
@@ -217,6 +224,9 @@ typedef ArgsiSS = CResult Function(int, Pointer<Utf8>, Pointer<Utf8>);
 typedef ArgsIISS = CResult Function(Int64, Int64, Pointer<Utf8>, Pointer<Utf8>);
 typedef ArgsiiSS = CResult Function(int, int, Pointer<Utf8>, Pointer<Utf8>);
 
+// 64-bit int, 32-bit int, two strings
+typedef ArgsIiSS = CResult Function(Int64, Int32, Pointer<Utf8>, Pointer<Utf8>);
+
 // (char*, *Data)
 typedef ArgsSD = CResult Function(Pointer<Utf8>, CData);
 // (char*, *Data, *Data)
@@ -224,6 +234,8 @@ typedef ArgsSDD = CResult Function(Pointer<Utf8>, CData, CData);
 
 typedef ArgsISI = CResult Function(Int64, Pointer<Utf8>, Int64);
 typedef ArgsiSi = CResult Function(int, Pointer<Utf8>, int);
+
+typedef ArgsISi = CResult Function(Int64, Pointer<Utf8>, Int32);
 
 typedef ArgsIII = CResult Function(Int64, Int64, Int64);
 typedef Argsiii = CResult Function(int, int, int);
@@ -242,6 +254,21 @@ typedef ArgsISSS = CResult Function(
     Int64, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef ArgsiSSS = CResult Function(
     int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef Argssiis = CResult Function(
+    Pointer<Utf8>, Pointer<Utf8>, int, int, Pointer<Utf8>);
+typedef Argssiiss = CResult Function(Pointer<Utf8>, Pointer<Utf8>, int, int,
+    Pointer<Utf8>, Pointer<Utf8>);
+
+typedef ArgsSIIS = CResult Function(
+    Pointer<Utf8>, Int64, Int64, Pointer<Utf8>);
+typedef ArgsSiis = CResult Function(
+    Pointer<Utf8>, int, int, Pointer<Utf8>);
+
+typedef Argsiiss = CResult Function(int, int, Pointer<Utf8>, Pointer<Utf8>);
+typedef ArgsSIISS = CResult Function(
+    Pointer<Utf8>, Int64, Int64, Pointer<Utf8>, Pointer<Utf8>);
+typedef ArgsSiiss = CResult Function(
+    Pointer<Utf8>, int, int, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef ArgsISSI = CResult Function(Int64, Pointer<Utf8>, Pointer<Utf8>, Int64);
 typedef ArgsiSSi = CResult Function(int, Pointer<Utf8>, Pointer<Utf8>, int);
@@ -287,6 +314,10 @@ typedef ArgsISSIi = CResult Function(
     Int64, Pointer<Utf8>, Pointer<Utf8>, Int32); // last param C.int
 typedef ArgsISSIiS = CResult Function(Int64, Pointer<Utf8>, Pointer<Utf8>,
     Int32, Pointer<Utf8>); // includes dest string
+
+// 64-bit int, 32-bit int
+typedef ArgsIi = CResult Function(Int64, Int32);
+typedef ArgsiI = CResult Function(int, int);
 
 //late DynamicLibrary baoLibrary;
 
@@ -361,12 +392,12 @@ void setLogLevel(String level) {
 }
 
 List<String> getRecentLog(int n) {
-  var r = bindings.call('bao_getRecentLog', [n]);
+  var r = bindings.call('bao_core_getRecentLog', [n]);
   return (r.list).map((e) => e as String).toList();
 }
 
 void setHttpLog(String url) {
-  bindings.call('bao_setHttpLog', [url]).throwIfError();
+  bindings.call('bao_core_setHttpLog', [url]).throwIfError();
 }
 
 String snapshot() {

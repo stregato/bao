@@ -14,7 +14,7 @@ class DB {
   }
 
   static Future<DB> open(String dbDriver, String dbPath, [String ddl = ""]) async {
-    var res = await bindings.acall('bao_openDB', [dbDriver, dbPath, ddl]);
+    var res = await bindings.acall('bao_db_open', [dbDriver, dbPath, ddl]);
     res.throwIfError();
     return DB(res.handle);
   }
@@ -31,26 +31,26 @@ class DB {
   }
 
   Future<void> close() async {
-    var res = await bindings.acall('bao_closeDB', [hnd]);
+    var res = await bindings.acall('bao_db_close', [hnd]);
     res.throwIfError();
   }
 
   /// Execute a query and get a rows handle for incremental fetching.
-  /// Use baoql_next/current/closeRows with the returned handle.
+  /// Use bao_replica_next/current/closeRows with the returned handle.
   Future<int> query(String query, Map<String, dynamic> args) async {
-    var res = await bindings.acall('bao_dbQuery', [hnd, query, args]);
+    var res = await bindings.acall('bao_db_query', [hnd, query, args]);
     res.throwIfError();
     return res.handle;
   }
 
   /// Execute a statement that does not return rows.
   Future<void> exec(String query, Map<String, dynamic> args) async {
-    var res = await bindings.acall('bao_dbExec', [hnd, query, args]);
+    var res = await bindings.acall('bao_db_exec', [hnd, query, args]);
     res.throwIfError();
   }
 
   Future<List<dynamic>> fetchOne(String query, Map<String, dynamic> args) async {
-    var res = await bindings.acall('bao_dbFetchOne', [hnd, query, args]);
+    var res = await bindings.acall('bao_db_fetch_one', [hnd, query, args]);
     res.throwIfError();
     return res.list;
   }
@@ -59,7 +59,7 @@ class DB {
   Future<List<dynamic>> fetch(String query, Map<String, dynamic> args,
       {int maxRows = 100000}) async {
     var res = await bindings
-        .acall('bao_dbFetch', [hnd, query, args, maxRows]);
+        .acall('bao_db_fetch', [hnd, query, args, maxRows]);
     res.throwIfError();
     return res.list;
   }

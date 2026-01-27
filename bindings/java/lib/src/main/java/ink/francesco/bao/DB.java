@@ -23,32 +23,32 @@ public class DB {
     }
 
     public DB(String path) throws Exception {
-        Result r = BaoLibrary.instance.bao_openDB(path);
+        Result r = BaoLibrary.instance.bao_db_open("sqlite3", path, "");
         r.check();
         hnd = r.hnd;
     }
 
     public void close() {
-        BaoLibrary.instance.bao_closeDB(hnd);
+        BaoLibrary.instance.bao_db_close(hnd);
     }
 
     public Map<String, Object> query(String key, String argsJson) throws Exception {
-        var r = BaoLibrary.instance.bao_dbQuery(hnd, key, argsJson);
+        var r = BaoLibrary.instance.bao_db_query(hnd, key, argsJson);
         return r.map();
     }
 
     public Map<String, Object> exec(String key, String argsJson) throws Exception {
-        var r = BaoLibrary.instance.bao_dbExec(hnd, key, argsJson);
+        var r = BaoLibrary.instance.bao_db_exec(hnd, key, argsJson);
         return r.map();
     }
 
     public Map<String, Object> fetch(String key, String argsJson, int maxRows) throws Exception {
-        var r = BaoLibrary.instance.bao_dbFetch(hnd, key, argsJson, maxRows);
+        var r = BaoLibrary.instance.bao_db_fetch(hnd, key, argsJson, maxRows);
         return r.map();
     }
 
     public Map<String, Object> fetchOne(String key, String argsJson) throws Exception {
-        var r = BaoLibrary.instance.bao_dbFetchOne(hnd, key, argsJson);
+        var r = BaoLibrary.instance.bao_db_fetch_one(hnd, key, argsJson);
         return r.map();
     }
 }

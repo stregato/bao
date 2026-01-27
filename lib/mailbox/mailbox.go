@@ -10,24 +10,24 @@ import (
 	"time"
 
 	"github.com/stregato/bao/lib/core"
-	"github.com/stregato/bao/lib/bao"
+	"github.com/stregato/bao/lib/vault"
 )
 
 type Message struct {
 	Subject     string      `json:"subject"`
 	Body        string      `json:"body"`
 	Attachments []string    `json:"attachments"`
-	FileInfo    *bao.File `json:"fileInfo"`
+	FileInfo    *vault.File `json:"fileInfo"`
 }
 
-func Send(s *bao.Bao, dir string, group bao.Group, message Message) error {
+func Send(s *vault.Vault, dest string, message Message) error {
 	id := core.SnowIDString()
 
 	res := make(chan error, len(message.Attachments))
 	for idx, attachment := range message.Attachments {
 		go func(idx int, attachment string) {
-			name := path.Join(dir, fmt.Sprintf("%s/%40x.attachment", id, idx))
-			_, err := s.Write(name, attachment, group, nil, 0, nil)
+			name := path.Join(dest, fmt.Sprintf("%s/%40x.attachment", id, idx))
+			_, err := s.Write(name, attachment, nil, 0, nil)
 			res <- err
 			message.Attachments[idx] = filepath.Base(attachment)
 		}(idx, attachment)
@@ -42,7 +42,7 @@ func Send(s *bao.Bao, dir string, group bao.Group, message Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.Write(path.Join(dir, id), "", group, attrs, 0, nil)
+	_, err = s.Write(path.Join(dest, id), "", attrs, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -50,8 +50,8 @@ func Send(s *bao.Bao, dir string, group bao.Group, message Message) error {
 	return nil
 }
 
-func Receive(s *bao.Bao, dir string, since time.Time, fromLocalId int64) ([]Message, error) {
-	ls, err := s.ReadDir(dir, since, fromLocalId, 0)
+func Receive(s *vault.Vault, dest string, since time.Time, fromLocalId int64) ([]Message, error) {
+	ls, err := s.ReadDir(dest, since, fromLocalId, 0)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -64,7 +64,7 @@ func Receive(s *bao.Bao, dir string, since time.Time, fromLocalId int64) ([]Mess
 
 	var messages []Message
 	for _, fi := range ls {
-		if fi.IsDir || fi.Flags&bao.Deleted != 0 || fi.Attrs == nil {
+		if fi.IsDir || fi.Flags&vault.Deleted != 0 || fi.Attrs == nil {
 			continue
 		}
 
@@ -81,9 +81,9 @@ func Receive(s *bao.Bao, dir string, since time.Time, fromLocalId int64) ([]Mess
 	return messages, nil
 }
 
-func Download(s *bao.Bao, dir string, m Message, attachment int, dest string) error {
-	name := path.Join(dir, fmt.Sprintf("%s/%40x.attachment", m.FileInfo.Name, attachment))
-	_, err := s.Read(path.Join(dir, name), dest, 0, nil)
+func Download(s *vault.Vault, dest string, m Message, attachment int, localDest string) error {
+	name := path.Join(dest, fmt.Sprintf("%s/%40x.attachment", m.FileInfo.Name, attachment))
+	_, err := s.Read(path.Join(dest, name), localDest, 0, nil)
 	if err != nil {
 		return err
 	}

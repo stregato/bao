@@ -161,6 +161,7 @@ func stacktraceString(err error) string {
 
 func TestErr(t *testing.T, err error, msg string, args ...interface{}) {
 	if err != nil {
+		args = append(args, err)
 		msg = fmt.Sprintf(msg, args...)
 		err = Errorw(msg, err)
 		logrus.Fatal(stacktraceString(err))

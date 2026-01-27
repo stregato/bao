@@ -34,11 +34,15 @@ Future<void> main() async {
   final db = await DB.defaultDB();
   final privateId = newPrivateID();
   final publicId = publicID(privateId);
-  final url = 'file:///tmp/$publicId/sample';
-  final storeConfig = StoreConfig.fromLocalUrl(url);
+  final storeConfig = StoreConfig(
+    id: 'sample',
+    type: 'local',
+    local: LocalConfig(base: '/tmp/$publicId/sample'),
+  );
+  final store = await Store.open(storeConfig);
 
   // Create a new bao
-  final b = await Bao.create(db, privateId, storeConfig);
+  final b = await Vault.create(privateId, db, store);
 
   // Grant yourself read/write access
   await b.syncAccess([AccessChange(users, accessReadWrite, publicId)]);

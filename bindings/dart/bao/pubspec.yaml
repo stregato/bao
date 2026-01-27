@@ -25,4 +25,4 @@ dev_dependencies:
   test: ^1.24.0
 
 executables:
-  bootstrap: bin/bootstrap.dart
+  bootstrap: bootstrap

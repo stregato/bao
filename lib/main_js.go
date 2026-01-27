@@ -11,7 +11,7 @@ import (
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
-	libbao "github.com/stregato/bao/lib/bao"
+	libbao "github.com/stregato/bao/lib/vault"
 )
 
 var (

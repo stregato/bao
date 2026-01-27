@@ -20,17 +20,17 @@ public class Mailbox {
     }
 
     public void send(String dir, String group, Message message) throws Exception {
-        Result r = BaoLibrary.instance.mailbox_send(bao.hnd, dir, group, mapper.writeValueAsString(message));
+        Result r = BaoLibrary.instance.bao_mailbox_send(bao.hnd, dir, group, mapper.writeValueAsString(message));
         r.check();
     }
 
     public List<Message> receive(String dir, long since, long fromId) throws Exception {
-        Result r = BaoLibrary.instance.mailbox_receive(bao.hnd, dir, since, fromId);
+        Result r = BaoLibrary.instance.bao_mailbox_receive(bao.hnd, dir, since, fromId);
         return r.list(Message.class);
     }
 
     public void download(String dir, Message message, int attachmentIndex, String dest) throws Exception {
-        Result r = BaoLibrary.instance.mailbox_download(bao.hnd, dir, mapper.writeValueAsString(message), attachmentIndex, dest);
+        Result r = BaoLibrary.instance.bao_mailbox_download(bao.hnd, dir, mapper.writeValueAsString(message), attachmentIndex, dest);
         r.check();
     }
 }

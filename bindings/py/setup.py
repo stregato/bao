@@ -3,15 +3,15 @@ from setuptools import setup, find_packages
 # Setup script
 setup(
     name='baolib',
-    version='0.1.4',
+    version='0.1.7',
     packages=find_packages(),
     python_requires='>=3.6, <4',
     include_package_data=True,
     package_data={
         'baolib': ['_libs/**/*'],  # Include all files under baolib/_libs
     },
-    author='Francesco Ink',
-    author_email='me@francesco.ink',
+    author='Baogeek',
+    author_email='me@baolib.org',
     description='Bao provides encrypted storage and data exchange for Python applications.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',

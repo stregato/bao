@@ -77,4 +77,7 @@ done
 
 rm -rf "${LIB_DEST_DIR}"
 
-echo "All packages built successfully."
+"$PYTHON_BIN" -m pip install -e "$SCRIPT_DIR"
+
+echo "All packages built successfully and installed into ${PYTHON_BIN}."
+

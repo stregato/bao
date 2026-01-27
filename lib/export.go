@@ -19,13 +19,13 @@ import (
 	"unsafe"
 
 	"github.com/sirupsen/logrus"
-	"github.com/stregato/bao/lib/bao"
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/mailbox"
-	"github.com/stregato/bao/lib/ql"
+	"github.com/stregato/bao/lib/replica"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
-	"github.com/stregato/bao/lib/storage"
+	"github.com/stregato/bao/lib/store"
+	"github.com/stregato/bao/lib/vault"
 	"gopkg.in/yaml.v2"
 )
 
@@ -77,10 +77,11 @@ func cInput(err error, i *C.char, v any) error {
 }
 
 var (
-	dbs       core.Registry[*sqlx.DB]
-	vaultes   core.Registry[*bao.Bao]
-	sqlLayers core.Registry[*ql.BaoQL]
-	rows      core.Registry[*sqlx.RowsX]
+	stores   core.Registry[store.Store]
+	dbs      core.Registry[*sqlx.DB]
+	vaults   core.Registry[*vault.Vault]
+	replicas core.Registry[*replica.Replica]
+	rows     core.Registry[*sqlx.RowsX]
 )
 
 // bao_setLogLevel sets the log level for the vault library. Possible values are: trace, debug, info, warn, error, fatal, panic.
@@ -108,20 +109,20 @@ func bao_setLogLevel(level *C.char) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// bao_setHttpLog sets the HTTP endpoint for log messages.
+// bao_core_setHttpLog sets the HTTP endpoint for log messages.
 //
-//export bao_setHttpLog
-func bao_setHttpLog(url *C.char) C.Result {
+//export bao_core_setHttpLog
+func bao_core_setHttpLog(url *C.char) C.Result {
 	core.Start("url %s", C.GoString(url))
 	core.SetHttpLog(C.GoString(url))
 	core.End("url %s", C.GoString(url))
 	return cResult(nil, 0, nil)
 }
 
-// bao_getRecentLog retrieves the most recent log messages up to the specified number.
+// bao_core_getRecentLog retrieves the most recent log messages up to the specified number.
 //
-//export bao_getRecentLog
-func bao_getRecentLog(n C.int) C.Result {
+//export bao_core_getRecentLog
+func bao_core_getRecentLog(n C.int) C.Result {
 	core.Start("n %d", n)
 	logs := core.GetRecentLog(int(n))
 	core.End("n %d", n)
@@ -135,11 +136,11 @@ func bao_test() C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// bao_newPrivateID creates a new identity with the specified nick. An identity is a key pair used for encryption and signing, and a nick name for human readable identification.
+// bao_security_newPrivateID creates a new identity with the specified nick. An identity is a key pair used for encryption and signing, and a nick name for human readable identification.
 // An identity is made of two fields ID and Private. ID is a concatenation of the nick name and the public key of the key pair. Private is the private key of the key pair.
 //
-//export bao_newPrivateID
-func bao_newPrivateID() C.Result {
+//export bao_security_newPrivateID
+func bao_security_newPrivateID() C.Result {
 	core.Start("")
 	core.TimeTrack()
 	identity, err := security.NewPrivateID()
@@ -152,10 +153,10 @@ func bao_newPrivateID() C.Result {
 	return cResult(identity, 0, nil)
 }
 
-// bao_publicID returns the public ID of the specified identity.
+// bao_security_publicID returns the public ID of the specified identity.
 //
-//export bao_publicID
-func bao_publicID(privateID *C.char) C.Result {
+//export bao_security_publicID
+func bao_security_publicID(privateID *C.char) C.Result {
 	privID := C.GoString(privateID)
 	core.Start("private ID len %d", len(privID))
 	core.TimeTrack()
@@ -169,10 +170,26 @@ func bao_publicID(privateID *C.char) C.Result {
 	return cResult(id, 0, nil)
 }
 
-// bao_ecEncrypt encrypts the specified plaintext using the provided identity.
+// bao_security_newKeyPair creates a new key pair and returns the public and private IDs.
 //
-//export bao_ecEncrypt
-func bao_ecEncrypt(id *C.char, plainData C.Data) C.Result {
+//export bao_security_newKeyPair
+func bao_security_newKeyPair() C.Result {
+	core.Start("")
+	core.TimeTrack()
+	publicID, privateID, err := security.NewKeyPair()
+	if err != nil {
+		core.LogError("cannot generate new key pair: %v", err)
+		core.End("failed to generate new key pair")
+		return cResult(nil, 0, err)
+	}
+	core.End("generated new key pair")
+	return cResult(map[string]string{"publicID": string(publicID), "privateID": string(privateID)}, 0, nil)
+}
+
+// bao_security_ecEncrypt encrypts the specified plaintext using the provided identity.
+//
+//export bao_security_ecEncrypt
+func bao_security_ecEncrypt(id *C.char, plainData C.Data) C.Result {
 	idStr := C.GoString(id)
 	core.Start("id len %d", len(idStr))
 	core.TimeTrack()
@@ -189,10 +206,10 @@ func bao_ecEncrypt(id *C.char, plainData C.Data) C.Result {
 	return cResult(cipherData, 0, nil)
 }
 
-// bao_ecDecrypt decrypts the specified ciphertext using the provided identity.
+// bao_security_ecDecrypt decrypts the specified ciphertext using the provided identity.
 //
-//export bao_ecDecrypt
-func bao_ecDecrypt(id *C.char, cipherData C.Data) C.Result {
+//export bao_security_ecDecrypt
+func bao_security_ecDecrypt(id *C.char, cipherData C.Data) C.Result {
 	idStr := C.GoString(id)
 	core.Start("id len %d", len(idStr))
 	core.TimeTrack()
@@ -207,10 +224,10 @@ func bao_ecDecrypt(id *C.char, cipherData C.Data) C.Result {
 	return cResult(plainData, 0, nil)
 }
 
-// bao_aesEncrypt encrypts the specified plaintext using the provided key/nonce.
+// bao_security_aesEncrypt encrypts the specified plaintext using the provided key/nonce.
 //
-//export bao_aesEncrypt
-func bao_aesEncrypt(key *C.char, nonceData, plainData C.Data) C.Result {
+//export bao_security_aesEncrypt
+func bao_security_aesEncrypt(key *C.char, nonceData, plainData C.Data) C.Result {
 	keyStr := C.GoString(key)
 	core.Start("key len %d", len(keyStr))
 	core.TimeTrack()
@@ -226,10 +243,10 @@ func bao_aesEncrypt(key *C.char, nonceData, plainData C.Data) C.Result {
 	return cResult(cipherText, 0, nil)
 }
 
-// bao_aesDecrypt decrypts the specified ciphertext using the provided key/nonce.
+// bao_security_aesDecrypt decrypts the specified ciphertext using the provided key/nonce.
 //
-//export bao_aesDecrypt
-func bao_aesDecrypt(key *C.char, nonceData, cipherData C.Data) C.Result {
+//export bao_security_aesDecrypt
+func bao_security_aesDecrypt(key *C.char, nonceData, cipherData C.Data) C.Result {
 	keyStr := C.GoString(key)
 	core.Start("key len %d", len(keyStr))
 	core.TimeTrack()
@@ -245,10 +262,10 @@ func bao_aesDecrypt(key *C.char, nonceData, cipherData C.Data) C.Result {
 	return cResult(plainText, 0, nil)
 }
 
-// bao_decodeID decodes the specified identity into the crypt key and the sign key.
+// bao_security_decodeID decodes the specified identity into the crypt key and the sign key.
 //
-//export bao_decodeID
-func bao_decodeID(id *C.char) C.Result {
+//export bao_security_decodeID
+func bao_security_decodeID(id *C.char) C.Result {
 	idStr := C.GoString(id)
 	core.Start("id len %d", len(idStr))
 	core.TimeTrack()
@@ -266,10 +283,10 @@ func bao_decodeID(id *C.char) C.Result {
 	return cResult(map[string]string{"cryptKey": cryptKey64, "signKey": signKey64}, 0, err)
 }
 
-// bao_openDB opens a new database connection to the specified URL.Bao library requires a database connection to store safe and file system data. The function returns a handle to the database connection.
+// bao_db_open opens a new database connection to the specified URL.Bao library requires a database connection to store safe and file system data. The function returns a handle to the database connection.
 //
-//export bao_openDB
-func bao_openDB(driverName, dataSourceName, ddl *C.char) C.Result {
+//export bao_db_open
+func bao_db_open(driverName, dataSourceName, ddl *C.char) C.Result {
 	core.Start("driver %s", C.GoString(driverName))
 	var db *sqlx.DB
 	var err error
@@ -286,10 +303,10 @@ func bao_openDB(driverName, dataSourceName, ddl *C.char) C.Result {
 	return cResult(db, dbs.Add(db), err)
 }
 
-// bao_closeDB closes the specified database connection.
+// bao_db_close closes the specified database connection.
 //
-//export bao_closeDB
-func bao_closeDB(dbH C.longlong) C.Result {
+//export bao_db_close
+func bao_db_close(dbH C.longlong) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -303,10 +320,10 @@ func bao_closeDB(dbH C.longlong) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// bao_dbQuery executes the specified query on the database connection identified by the given handle.
+// bao_db_query executes the specified query on the database connection identified by the given handle.
 //
-//export bao_dbQuery
-func bao_dbQuery(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
+//export bao_db_query
+func bao_db_query(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -329,10 +346,10 @@ func bao_dbQuery(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	return cResult(nil, rows.Add(&res), err)
 }
 
-// bao_dbExec executes the specified query on the database connection identified by the given handle and returns a single row.
+// bao_db_exec executes the specified query on the database connection identified by the given handle and returns a single row.
 //
-//export bao_dbExec
-func bao_dbExec(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
+//export bao_db_exec
+func bao_db_exec(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -353,10 +370,10 @@ func bao_dbExec(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	return cResult(nil, 0, err)
 }
 
-// bao_dbFetch fetches rows from the specified query on the database connection identified by the given handle.
+// bao_db_fetch fetches rows from the specified query on the database connection identified by the given handle.
 //
-//export bao_dbFetch
-func bao_dbFetch(dbH C.longlong, queryC *C.char, argsC *C.char, maxRows C.int) C.Result {
+//export bao_db_fetch
+func bao_db_fetch(dbH C.longlong, queryC *C.char, argsC *C.char, maxRows C.int) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -381,10 +398,10 @@ func bao_dbFetch(dbH C.longlong, queryC *C.char, argsC *C.char, maxRows C.int) C
 	return cResult(rows, 0, nil)
 }
 
-// bao_dbFetchOne fetches a single row from the specified query on the database connection identified by the given handle.
+// bao_db_fetch_one fetches a single row from the specified query on the database connection identified by the given handle.
 //
-//export bao_dbFetchOne
-func bao_dbFetchOne(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
+//export bao_db_fetch_one
+func bao_db_fetch_one(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -408,10 +425,136 @@ func bao_dbFetchOne(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	return cResult(row, 0, nil)
 }
 
-// bao_create creates a new vault with the specified identity, URL and configuration. A vault is a secure storage for keys and files. The function returns a handle to the bao.
+// bao_store_open opens a store.backend with the specified configuration. The function returns a handle to the store.backend.
 //
-//export bao_create
-func bao_create(dbH C.longlong, idC *C.char, storeC *C.char, configC *C.char) C.Result {
+//export bao_store_open
+func bao_store_open(configC *C.char) C.Result {
+	core.Start("store config %s", C.GoString(configC))
+	core.TimeTrack()
+	var storeConfig store.StoreConfig
+	err := cInput(nil, configC, &storeConfig)
+	if err != nil {
+		core.LogError("cannot unmarshal store config %s: %v", C.GoString(configC), err)
+		return cResult(nil, 0, err)
+	}
+
+	store, err := store.Open(storeConfig)
+	if err != nil {
+		core.LogError("cannot open store %s: %v", storeConfig.Id, err)
+		return cResult(nil, 0, err)
+	}
+
+	stores.Add(store)
+	core.End("opened store %s", storeConfig.Id)
+	return cResult(store, stores.Add(store), nil)
+}
+
+// bao_store_close closes the specified store.backend.
+//
+//export bao_store_close
+func bao_store_close(storeH C.longlong) C.Result {
+	core.Start("handle %d", storeH)
+	core.TimeTrack()
+	s, err := stores.Get(int64(storeH))
+	if err != nil {
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	err = s.Close()
+	if err != nil {
+		core.LogError("cannot close store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	stores.Remove(int64(storeH))
+	core.End("handle %d", storeH)
+	return cResult(nil, 0, nil)
+}
+
+// bao_store_readDir reads the contents of the specified directory from the store.backend.
+//
+//export bao_store_readDir
+func bao_store_readDir(storeH C.longlong, dirC *C.char, filterC *C.char) C.Result {
+	core.Start("handle %d", storeH)
+	core.TimeTrack()
+	s, err := stores.Get(int64(storeH))
+	if err != nil {
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	dir := C.GoString(dirC)
+
+	var filter store.Filter
+	err = cInput(err, filterC, &filter)
+	if err != nil {
+		core.LogError("cannot unmarshal filter %s: %v", C.GoString(filterC), err)
+		return cResult(nil, 0, err)
+	}
+
+	entries, err := s.ReadDir(dir, filter)
+	if err != nil {
+		core.LogError("cannot read dir %s from store with handle %d: %v", dir, storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	core.End("handle %d", storeH)
+	return cResult(entries, 0, nil)
+}
+
+// bao_store_stat retrieves the metadata of the specified path from the store.backend.
+//
+//export bao_store_stat
+func bao_store_stat(storeH C.longlong, pathC *C.char) C.Result {
+	core.Start("handle %d", storeH)
+	core.TimeTrack()
+	s, err := stores.Get(int64(storeH))
+	if err != nil {
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	path := C.GoString(pathC)
+
+	info, err := s.Stat(path)
+	if err != nil {
+		core.LogError("cannot stat path %s from store with handle %d: %v", path, storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	core.End("handle %d", storeH)
+	return cResult(info, 0, nil)
+}
+
+// bao_store_delete deletes the specified path from the store.backend.
+//
+//export bao_store_delete
+func bao_store_delete(storeH C.longlong, pathC *C.char) C.Result {
+	core.Start("handle %d", storeH)
+	core.TimeTrack()
+	s, err := stores.Get(int64(storeH))
+	if err != nil {
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	path := C.GoString(pathC)
+
+	err = s.Delete(path)
+	if err != nil {
+		core.LogError("cannot delete path %s from store with handle %d: %v", path, storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	core.End("handle %d", storeH)
+	return cResult(nil, 0, nil)
+}
+
+// bao_vault_create creates a new vault with the specified identity, URL and configuration. A vault is a secure store.for keys and files. The function returns a handle to the bao.
+//
+//export bao_vault_create
+func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, dbH C.longlong, configC *C.char) C.Result {
 	core.Start("db handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -420,35 +563,35 @@ func bao_create(dbH C.longlong, idC *C.char, storeC *C.char, configC *C.char) C.
 		return cResult(nil, 0, err)
 	}
 
-	var storeConfig storage.StoreConfig
-	err = cInput(err, storeC, &storeConfig)
+	store, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot unmarshal store config %s: %v", C.GoString(storeC), err)
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
-	var config bao.Config
+	var config vault.Config
 	err = cInput(err, configC, &config)
 	if err != nil {
 		core.LogError("cannot unmarshal settings %s: %v", C.GoString(configC), err)
 		return cResult(nil, 0, err)
 	}
 
-	id := C.GoString(idC)
-	s, err := bao.Create(d, security.PrivateID(id), storeConfig, config)
+	me := C.GoString(userPrivateID)
+	realm := C.GoString(realmC)
+	s, err := vault.Create(vault.Realm(realm), security.PrivateID(me), store, d, config)
 	if err != nil {
-		core.LogError("cannot create vault for store %s: %v", storeConfig.Id, err)
+		core.LogError("cannot create vault for store %s: %v", store.ID(), err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("created vault for store %s", storeConfig.Id)
-	return cResult(s, vaultes.Add(s), err)
+	core.End("created vault for store %s", store.ID())
+	return cResult(s, vaults.Add(s), err)
 }
 
-// bao_open opens an existing vault with the specified identity, author and URL. The function returns a handle to the bao.
+// bao_vault_open opens an existing vault with the specified identity, author and URL. The function returns a handle to the bao.
 //
-//export bao_open
-func bao_open(dbH C.longlong, idC *C.char, configC *C.char, authorC *C.char) C.Result {
+//export bao_vault_open
+func bao_vault_open(realmC *C.char, meC *C.char, dbH C.longlong, storeH C.longlong, configC *C.char, authorC *C.char) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 
@@ -458,64 +601,63 @@ func bao_open(dbH C.longlong, idC *C.char, configC *C.char, authorC *C.char) C.R
 		return cResult(nil, 0, err)
 	}
 
-	id := C.GoString(idC)
+	store, err := stores.Get(int64(storeH))
+	if err != nil {
+		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		return cResult(nil, 0, err)
+	}
+
+	me := C.GoString(meC)
 	author := C.GoString(authorC)
-
-	var config storage.StoreConfig
-	err = cInput(err, configC, &config)
+	realm := C.GoString(realmC)
+	s, err := vault.Open(vault.Realm(realm), security.PrivateID(me), security.PublicID(author), store, d)
 	if err != nil {
-		core.LogError("cannot unmarshal store config %s: %v", C.GoString(configC), err)
+		core.LogError("cannot open vault for store %s: %v", store.ID(), err)
 		return cResult(nil, 0, err)
 	}
 
-	s, err := bao.Open(d, security.PrivateID(id), config, security.PublicID(author))
-	if err != nil {
-		core.LogError("cannot open vault for store %s: %v", config.Id, err)
-		return cResult(nil, 0, err)
-	}
-
-	core.End("vault open for store %s", config.Id)
-	return cResult(s, vaultes.Add(s), nil)
+	core.End("vault open for store %s", store.ID())
+	return cResult(s, vaults.Add(s), nil)
 }
 
-// bao_close closes the specified safe.
+// bao_vault_close closes the specified safe.
 //
-//export bao_close
-func bao_close(sH C.longlong) C.Result {
+//export bao_vault_close
+func bao_vault_close(sH C.longlong) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	s.Close()
-	vaultes.Remove(int64(sH))
+	vaults.Remove(int64(sH))
 	core.End("handle %d", sH)
 	return cResult(nil, 0, nil)
 }
 
-// bao_syncAccess sets and optionally flushes access rights for the specified bao.
+// bao_vault_syncAccess sets and optionally flushes access rights for the specified vault.
 //
-//export bao_syncAccess
-func bao_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
+//export bao_vault_syncAccess
+func bao_vault_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	var changes []bao.AccessChange
+	var changes []vault.AccessChange
 	changesJSON := C.GoString(changesC)
 	if err := json.Unmarshal([]byte(changesJSON), &changes); err != nil {
 		core.LogError("cannot unmarshal access change payload: %v", err)
 		return cResult(nil, 0, err)
 	}
 
-	err = s.SyncAccess(bao.IOOption(optionsC), changes...)
+	err = s.SyncAccess(vault.IOOption(optionsC), changes...)
 	if err != nil {
 		core.LogError("cannot synchronize access changes: %v", err)
 		return cResult(nil, 0, err)
@@ -524,113 +666,82 @@ func bao_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// bao_getAccess returns the users and access rights for the specified group.
+// bao_vault_getAccesses returns the users and access rights for the specified group.
 //
-//export bao_getAccess
-func bao_getAccess(sH C.longlong, group *C.char) C.Result {
-	core.Start("handle %d", sH)
+//export bao_vault_getAccesses
+func bao_vault_getAccesses(vH C.longlong) C.Result {
+	core.Start("handle %d", vH)
 	core.TimeTrack()
-	s, err := vaultes.Get(int64(sH))
+	v, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", vH, err)
 		return cResult(nil, 0, err)
 	}
 
-	a, err := s.GetUsers(bao.Group(C.GoString(group)))
+	a, err := v.GetAccesses()
 	if err != nil {
-		core.LogError("cannot get access for vault %s: %v", C.GoString(group), err)
+		core.LogError("cannot get access for vault: %v", err)
 		return cResult(nil, 0, err)
 	}
-	core.End("group %s", C.GoString(group))
+	core.End("vault access retrieved")
 	return cResult(a, 0, nil)
 }
 
-// bao_getGroups returns the groups for the specified user.
+// bao_vault_getAccess returns the access rights for the specified user in the bao.
 //
-//export bao_getGroups
-func bao_getGroups(sH C.longlong, userC *C.char) C.Result {
-	userID := C.GoString(userC)
-	core.Start("handle %d user len %d", sH, len(userID))
+//export bao_vault_getAccess
+func bao_vault_getAccess(vH C.longlong, userC *C.char) C.Result {
+	core.Start("handle %d", vH)
 	core.TimeTrack()
-	s, err := vaultes.Get(int64(sH))
+	v, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", vH, err)
 		return cResult(nil, 0, err)
 	}
 
-	groups, err := s.GetGroups(security.PublicID(userID))
+	user := C.GoString(userC)
+	access, err := v.GetAccess(security.PublicID(user))
 	if err != nil {
-		core.LogError("cannot get groups for provided user in vault %d: %v", sH, err)
+		core.LogError("cannot get access for user %s in vault: %v", user, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("user len %d", len(userID))
-	return cResult(groups, 0, nil)
+	core.End("vault access retrieved for user %s", user)
+	return cResult(access, 0, nil)
 }
 
-// bao_syncFS synchronizes the file system for the specified groups in the bao.
+// bao_vault_sync synchronizes the file system for the specified groups in the bao.
 //
-// bao_sync synchronizes the file system for the specified groups in the bao.
-
-//export bao_sync
-func bao_sync(sH C.longlong, groupsC *C.char) C.Result {
-	var groups []bao.Group
+//export bao_vault_sync
+func bao_vault_sync(vH C.longlong) C.Result {
+	var groups []vault.Realm
 
 	core.TimeTrack()
-	core.Start("handle %d", sH)
-	s, err := vaultes.Get(int64(sH))
+	core.Start("handle %d", vH)
+	s, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d: %v", vH, err)
 		return cResult(nil, 0, err)
 	}
 
-	if groupsC != nil {
-		err = cInput(err, groupsC, &groups)
-		if err != nil {
-			core.LogError("cannot unmarshal groups %s: %v", C.GoString(groupsC), err)
-			return cResult(nil, 0, err)
-		}
-	}
-
-	files, err := s.Sync(groups...)
+	files, err := s.Sync()
 	if err != nil {
-		core.LogError("cannot synchronize groups %v in vault %d: %v", groups, sH, err)
+		core.LogError("cannot synchronize groups %v in vault %d: %v", groups, vH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("bao_sync successful for vault %d with groups: %v", sH, groups)
+	core.End("bao_sync successful for vault %d with groups: %v", vH, groups)
 	return cResult(files, 0, nil)
 }
 
-// bao_listGroups returns all the groups in the stack
+// bao_vault_waitFiles completes the read and write operations for the specified files in the bao.
 //
-//export bao_listGroups
-func bao_listGroups(sH C.longlong) C.Result {
-	core.TimeTrack()
-	core.Start("handle %d", sH)
-	s, err := vaultes.Get(int64(sH))
-	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
-		return cResult(nil, 0, err)
-	}
-
-	groups, err := s.ListGroups()
-	if err != nil {
-		core.LogError("cannot list groups for vault %d: %v", sH, err)
-		return cResult(nil, 0, err)
-	}
-	core.End("vault with handle %d groups: %v", sH, groups)
-	return cResult(groups, 0, nil)
-}
-
-// bao_waitFiles completes the read and write operations for the specified files in the bao.
-//
-//export bao_waitFiles
-func bao_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
-	var fileIds []bao.FileId
+//export bao_vault_waitFiles
+func bao_vault_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
+	var fileIds []vault.FileId
 
 	core.TimeTrack()
 	core.Start("called with sH: %d", sH)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -653,13 +764,13 @@ func bao_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// bao_setAttribute sets an attribute for the current user
+// bao_vault_setAttribute sets an attribute for the current user
 //
-//export bao_setAttribute
-func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Result {
+//export bao_vault_setAttribute
+func bao_vault_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -668,7 +779,7 @@ func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Res
 	name := C.GoString(nameC)
 	value := C.GoString(valueC)
 
-	err = s.SetAttribute(bao.IOOption(options), name, value)
+	err = s.SetAttribute(vault.IOOption(options), name, value)
 	if err != nil {
 		core.LogError("cannot set attribute %s to %s in vault %d: %v", name, value, sH, err)
 		return cResult(nil, 0, err)
@@ -677,13 +788,13 @@ func bao_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Res
 	return cResult(nil, 0, nil)
 }
 
-// bao_getAttribute gets an attribute for the specified user
+// bao_vault_getAttribute gets an attribute for the specified user
 //
-//export bao_getAttribute
-func bao_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
+//export bao_vault_getAttribute
+func bao_vault_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s, author: %s", sH, C.GoString(nameC), C.GoString(authorC))
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -702,13 +813,13 @@ func bao_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 	return cResult(value, 0, nil)
 }
 
-// bao_getAttributes gets all attributes for the specified user
+// bao_vault_getAttributes gets all attributes for the specified user
 //
-//export bao_getAttributes
-func bao_getAttributes(sH C.longlong, authorC *C.char) C.Result {
+//export bao_vault_getAttributes
+func bao_vault_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -726,13 +837,13 @@ func bao_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 	return cResult(attrs, 0, nil)
 }
 
-// bao_readDir reads the specified directory from the bao.
+// bao_vault_readDir reads the specified directory from the bao.
 //
-//export bao_readDir
-func bao_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, limit C.int) C.Result {
+//export bao_vault_readDir
+func bao_vault_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, limit C.int) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, dir: %s, after: %d, fromId: %d, limit: %d", sH, C.GoString(dir), after, fromId, limit)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -745,11 +856,11 @@ func bao_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, limit C.i
 
 // bao_stat returns the file information for the specified file in the bao.
 //
-//export bao_stat
-func bao_stat(sH C.longlong, name *C.char) C.Result {
+//export bao_vault_stat
+func bao_vault_stat(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -767,13 +878,13 @@ func bao_stat(sH C.longlong, name *C.char) C.Result {
 	return cResult(info, 0, err)
 }
 
-// bao_getGroup returns the group name of the specified file.
+// bao_vault_getGroup returns the group name of the specified file.
 //
-//export bao_getGroup
-func bao_getGroup(sH C.longlong, name *C.char) C.Result {
+//export bao_vault_getGroup
+func bao_vault_getGroup(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
-	core.Start("bao_getGroup called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := vaultes.Get(int64(sH))
+	core.Start("bao_vault_getGroup called with sH: %d, name: %s", sH, C.GoString(name))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -787,11 +898,11 @@ func bao_getGroup(sH C.longlong, name *C.char) C.Result {
 //
 // bao_waitFiles waits for pending I/O for the specified files in the bao.
 //
-//export bao_getAuthor
-func bao_getAuthor(sH C.longlong, name *C.char) C.Result {
+//export bao_vault_getAuthor
+func bao_vault_getAuthor(sH C.longlong, name *C.char) C.Result {
 	core.TimeTrack()
-	core.Start("bao_getAuthor called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := vaultes.Get(int64(sH))
+	core.Start("bao_vault_getAuthor called with sH: %d, name: %s", sH, C.GoString(name))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
@@ -801,19 +912,19 @@ func bao_getAuthor(sH C.longlong, name *C.char) C.Result {
 	return cResult(author, 0, err)
 }
 
-// bao_read reads the specified file from the bao.
+// bao_vault_read reads the specified file from the bao.
 //
-//export bao_read
-func bao_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
+//export bao_vault_read
+func bao_vault_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s, dest: %s, options: %d", sH, C.GoString(name), C.GoString(destC), options)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
 
 	dest := C.GoString(destC)
-	file, err := s.Read(C.GoString(name), dest, bao.IOOption(options), nil)
+	file, err := s.Read(C.GoString(name), dest, vault.IOOption(options), nil)
 	if err != nil {
 		core.LogError("cannot read file %s from vault %d: %v", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
@@ -823,13 +934,13 @@ func bao_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
 	return cResult(file, 0, err)
 }
 
-// bao_write writes the specified file to the bao.
+// bao_vault_write writes the specified file to the bao.
 //
-//export bao_write
-func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, options C.longlong) C.Result {
+//export bao_vault_write
+func bao_vault_write(sH C.longlong, destC, sourceC *C.char, attrsC C.Data, options C.longlong) C.Result {
 	core.TimeTrack()
-	core.Start("called with sH: %d, dest: %s, source: %s, group: %s, options: %d", sH, C.GoString(destC), C.GoString(sourceC), C.GoString(groupC), options)
-	s, err := vaultes.Get(int64(sH))
+	core.Start("called with sH: %d, dest: %s, source: %s, options: %d", sH, C.GoString(destC), C.GoString(sourceC), options)
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -837,10 +948,10 @@ func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, opt
 
 	dest := C.GoString(destC)
 	source := C.GoString(sourceC)
-	group := C.GoString(groupC)
+
 	attrs := C.GoBytes(unsafe.Pointer(attrsC.ptr), C.int(attrsC.len))
 
-	file, err := s.Write(dest, source, bao.Group(group), attrs, bao.IOOption(options), nil)
+	file, err := s.Write(dest, source, attrs, vault.IOOption(options), nil)
 	if err != nil {
 		core.LogError("cannot write file %s to vault %d, src %s: %v", dest, sH, source, err)
 		return cResult(nil, 0, err)
@@ -850,20 +961,20 @@ func bao_write(sH C.longlong, destC, sourceC, groupC *C.char, attrsC C.Data, opt
 	return cResult(file, 0, nil)
 }
 
-// bao_delete deletes the specified file from the bao.
+// bao_vault_delete deletes the specified file from the bao.
 //
-//export bao_delete
-func bao_delete(sH C.longlong, nameC *C.char, options int) C.Result {
+//export bao_vault_delete
+func bao_vault_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(nameC))
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	name := C.GoString(nameC)
-	err = s.Delete(name, bao.IOOption(options))
+	err = s.Delete(name, vault.IOOption(options))
 	if err != nil {
 		core.LogError("cannot delete file %s from vault %d: %v", name, sH, err)
 		return cResult(nil, 0, err)
@@ -873,13 +984,13 @@ func bao_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// stassh_allocatedSize returns the allocated size of the specified bao.
+// bao_vault_allocatedSize returns the allocated size of the specified bao.
 //
-//export bao_allocatedSize
-func bao_allocatedSize(sH C.longlong) C.Result {
+//export bao_vault_allocatedSize
+func bao_vault_allocatedSize(sH C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d", sH)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -890,19 +1001,17 @@ func bao_allocatedSize(sH C.longlong) C.Result {
 	return cResult(size, 0, nil)
 }
 
-// baoql_layer returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the vault data.
+// bao_replica_open returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the vault data.
 //
-//export baoql_layer
-func baoql_layer(sH C.longlong, groupC *C.char, dbH C.int) C.Result {
+//export bao_replica_open
+func bao_replica_open(sH C.longlong, dbH C.int) C.Result {
 	core.TimeTrack()
-	core.Start("called with sH: %d, group: %s, dbH: %d", sH, C.GoString(groupC), dbH)
-	s, err := vaultes.Get(int64(sH))
+	core.Start("called with sH: %d, dbH: %d", sH, dbH)
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
-
-	group := bao.Group(C.GoString(groupC))
 
 	db, err := dbs.Get(int64(dbH))
 	if err != nil {
@@ -910,25 +1019,25 @@ func baoql_layer(sH C.longlong, groupC *C.char, dbH C.int) C.Result {
 		return cResult(nil, 0, err)
 	}
 
-	dt, err := ql.SQL(s, group, db)
+	dt, err := replica.Open(s, db)
 	if err != nil {
 		core.LogError("cannot create sql layer for vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("sql layer for vault %d created", sH)
-	return cResult(dt, sqlLayers.Add(dt), err)
+	return cResult(dt, replicas.Add(dt), err)
 }
 
-// baoql_exec executes the specified SQL like command on the specified data table.
+// bao_replica_exec executes the specified SQL like command on the specified data table.
 //
-//export baoql_exec
-func baoql_exec(dtH C.longlong, keyC, argsC *C.char) C.Result {
+//export bao_replica_exec
+func bao_replica_exec(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	core.TimeTrack()
 
 	key := C.GoString(keyC)
 	core.Start("dtH: %d, key: %s", dtH, key)
 
-	dt, err := sqlLayers.Get(int64(dtH))
+	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
 		return cResult(nil, 0, err)
@@ -949,15 +1058,15 @@ func baoql_exec(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	return cResult(nil, 0, err)
 }
 
-// baoql_query executes the specified SQL like query on the specified data table.
+// bao_replica_query executes the specified SQL like query on the specified data table.
 //
-//export baoql_query
-func baoql_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
+//export bao_replica_query
+func bao_replica_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	core.TimeTrack()
 
 	key := C.GoString(keyC)
 	core.Start("called with dtH: %d, key: %s", dtH, key)
-	dt, err := sqlLayers.Get(int64(dtH))
+	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
 		return cResult(nil, 0, err)
@@ -979,19 +1088,19 @@ func baoql_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	return cResult(nil, rows.Add(&rows_), err)
 }
 
-// baoql_sync_tables synchronizes the SQL tables with the vault data.
+// bao_replica_sync synchronizes the SQL tables with the vault data.
 //
-//export baoql_sync_tables
-func baoql_sync_tables(dtH C.longlong) C.Result {
+//export bao_replica_sync
+func bao_replica_sync(dtH C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("")
-	dt, err := sqlLayers.Get(int64(dtH))
+	replica, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d: %v", dtH, err)
 		return cResult(nil, 0, err)
 	}
 
-	updates, err := dt.SyncTables()
+	updates, err := replica.Sync()
 	if err != nil {
 		core.LogError("cannot synchronize tables in sql layer %d: %v", dtH, err)
 		return cResult(nil, 0, err)
@@ -1000,15 +1109,15 @@ func baoql_sync_tables(dtH C.longlong) C.Result {
 	return cResult(updates, 0, nil)
 }
 
-// baoql_fetch fetches the specified number of rows from the specified rows.
+// bao_replica_fetch fetches the specified number of rows from the specified rows.
 //
-//export baoql_fetch
-func baoql_fetch(dtH C.longlong, keyC, argsC *C.char, maxRows C.int) C.Result {
+//export bao_replica_fetch
+func bao_replica_fetch(dtH C.longlong, keyC, argsC *C.char, maxRows C.int) C.Result {
 	core.TimeTrack()
 
 	key := C.GoString(keyC)
 	core.Start("key: %s", key)
-	dt, err := sqlLayers.Get(int64(dtH))
+	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
 		return cResult(nil, 0, err)
@@ -1030,15 +1139,15 @@ func baoql_fetch(dtH C.longlong, keyC, argsC *C.char, maxRows C.int) C.Result {
 	return cResult(rows_, 0, nil)
 }
 
-// baoql_fetchOne fetches a single row for the specified SQL like query and arguments.
+// bao_replica_fetchOne fetches a single row for the specified SQL like query and arguments.
 //
-//export baoql_fetchOne
-func baoql_fetchOne(dtH C.longlong, keyC, argsC *C.char) C.Result {
+//export bao_replica_fetchOne
+func bao_replica_fetchOne(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	core.TimeTrack()
 	key := C.GoString(keyC)
 	core.Start("key: %s", key)
 
-	dt, err := sqlLayers.Get(int64(dtH))
+	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
 		return cResult(nil, 0, err)
@@ -1060,10 +1169,10 @@ func baoql_fetchOne(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	return cResult(values, 0, nil)
 }
 
-// baoql_current returns the next row from the specified rows.
+// bao_replica_current returns the next row from the specified rows.
 //
-//export baoql_current
-func baoql_current(rowsH C.longlong) C.Result {
+//export bao_replica_current
+func bao_replica_current(rowsH C.longlong) C.Result {
 	core.TimeTrack()
 
 	core.Start("rowsH: %d", rowsH)
@@ -1084,8 +1193,8 @@ func baoql_current(rowsH C.longlong) C.Result {
 
 // bao_rowsNext checks if there are more rows to read.
 //
-//export baoql_next
-func baoql_next(rowsH C.longlong) C.Result {
+//export bao_replica_next
+func bao_replica_next(rowsH C.longlong) C.Result {
 	core.TimeTrack()
 
 	core.Start("rowsH: %d", rowsH)
@@ -1100,10 +1209,10 @@ func baoql_next(rowsH C.longlong) C.Result {
 	return cResult(res, 0, nil)
 }
 
-// baoql_closeRows closes the specified rows.
+// bao_replica_closeRows closes the specified rows.
 //
-//export baoql_closeRows
-func baoql_closeRows(rowsH C.longlong) C.Result {
+//export bao_replica_closeRows
+func bao_replica_closeRows(rowsH C.longlong) C.Result {
 	core.TimeTrack()
 	core.Start("called with rowsH: %d", rowsH)
 	r, err := rows.Get(int64(rowsH))
@@ -1122,14 +1231,14 @@ func baoql_closeRows(rowsH C.longlong) C.Result {
 	return cResult(nil, 0, nil)
 }
 
-// baoql_cancel rolls back the changes since the last sync
+// bao_replica_cancel rolls back the changes since the last sync
 //
-//export baoql_cancel
-func baoql_cancel(dtH C.longlong) C.Result {
+//export bao_replica_cancel
+func bao_replica_cancel(dtH C.longlong) C.Result {
 	core.TimeTrack()
 
 	core.Start("called with dtH: %d", dtH)
-	dt, err := sqlLayers.Get(int64(dtH))
+	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
 		core.LogError("cannot get sql layer %d: %v", dtH, err)
 		return cResult(nil, 0, err)
@@ -1143,13 +1252,13 @@ func baoql_cancel(dtH C.longlong) C.Result {
 	return cResult(nil, 0, err)
 }
 
-// mailbox_send sends the specified message using the specified dir as container
+// bao_mailbox_send sends the specified message using the specified dir as container
 //
-//export mailbox_send
-func mailbox_send(sH C.longlong, dir, group, message *C.char) C.Result {
+//export bao_mailbox_send
+func bao_mailbox_send(sH C.longlong, dir, message *C.char) C.Result {
 	core.TimeTrack()
-	core.Start("called with sH: %d, dir: %s, group: %s, message: %s", sH, C.GoString(dir), C.GoString(group), C.GoString(message))
-	s, err := vaultes.Get(int64(sH))
+	core.Start("called with sH: %d, dir: %s, message: %s", sH, C.GoString(dir), C.GoString(message))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -1162,23 +1271,23 @@ func mailbox_send(sH C.longlong, dir, group, message *C.char) C.Result {
 		return cResult(nil, 0, err)
 	}
 
-	err = mailbox.Send(s, C.GoString(dir), bao.Group(C.GoString(group)), m)
+	err = mailbox.Send(s, C.GoString(dir), m)
 	if err != nil {
-		core.LogError("cannot send message %s to group %s: %v", C.GoString(message), C.GoString(group), err)
+		core.LogError("cannot send message %s: %v", C.GoString(message), err)
 		return cResult(nil, 0, err)
 	}
-	core.End("successfully sent message %s to group %s", C.GoString(message), C.GoString(group))
+	core.End("successfully sent message %s", C.GoString(message))
 	return cResult(nil, 0, err)
 }
 
-// mailbox_receive receives messages from the specified dir since the specified time and from the specified id.
+// bao_mailbox_receive receives messages from the specified dir since the specified time and from the specified id.
 //
-//export mailbox_receive
-func mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C.Result {
+//export bao_mailbox_receive
+func bao_mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C.Result {
 	core.TimeTrack()
 
 	core.Start("called with sH: %d, dir: %s, since: %d, fromId: %d", sH, C.GoString(dir), since, fromId)
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -1193,14 +1302,14 @@ func mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C.Res
 	return cResult(msgs, 0, err)
 }
 
-// mailbox_download downloads the specified attachment for the specified message to the specified destination.
+// bao_mailbox_download downloads the specified attachment for the specified message to the specified destination.
 //
-//export mailbox_download
-func mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int, dest *C.char) C.Result {
+//export bao_mailbox_download
+func bao_mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int, dest *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, dir: %s, message: %s, attachment: %d, dest: %s", sH, C.GoString(dir), C.GoString(message), attachment, C.GoString(dest))
 
-	s, err := vaultes.Get(int64(sH))
+	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
 		return cResult(nil, 0, err)
@@ -1224,8 +1333,8 @@ func mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int, des
 
 type Snapshot struct {
 	DBs        *core.Registry[*sqlx.DB]
-	vaultes    *core.Registry[*bao.Bao]
-	BaoQLayers *core.Registry[*ql.BaoQL]
+	vaults     *core.Registry[*vault.Vault]
+	BaoQLayers *core.Registry[*replica.Replica]
 }
 
 // bao_snapshot creates a snapshot of all vaultes and baoqlayers.
@@ -1237,8 +1346,8 @@ func bao_snapshot() C.Result {
 
 	snapshot := Snapshot{
 		DBs:        &dbs,
-		vaultes:    &vaultes,
-		BaoQLayers: &sqlLayers,
+		vaults:     &vaults,
+		BaoQLayers: &replicas,
 	}
 
 	data, err := yaml.Marshal(&snapshot)

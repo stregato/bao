@@ -4,17 +4,20 @@
 package main
 
 import (
-	"github.com/stregato/bao/lib/bao"
-	"github.com/stregato/bao/lib/ql"
+	"github.com/stregato/bao/lib/replica"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
-	"github.com/stregato/bao/lib/storage"
+	"github.com/stregato/bao/lib/store"
+	"github.com/stregato/bao/lib/vault"
 )
 
 // Aliases to simplify downstream imports.
 type (
-	Bao   = bao.Bao
-	BaoQL = ql.BaoQL
+	Vault   = vault.Vault
+	Replica = replica.Replica
+	Store   = store.Store
+	Config  = vault.Config
+	Realm   = vault.Realm
 )
 
 // NewPrivateID generates a new identity containing the signing and encryption keys.
@@ -57,19 +60,19 @@ func OpenDB(driverName, dataSource, ddl string) (*sqlx.DB, error) {
 	return sqlx.Open(driverName, dataSource, ddl)
 }
 
-// CreateBao creates a new bao vault with the provided identity, backing store URL, and config.
-func CreateBao(db *sqlx.DB, id security.PrivateID, c storage.StoreConfig, cfg bao.Config) (*bao.Bao, error) {
-	return bao.Create(db, id, c, cfg)
+// CreateVault creates a new bao vault with the provided identity, backing store URL, and config.
+func CreateVault(realm Realm, userPrivateID security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*vault.Vault, error) {
+	return vault.Create(realm, userPrivateID, store, db, config)
 }
 
-// OpenBao opens an existing bao vault with the provided identity, URL, and author.
-func OpenBao(db *sqlx.DB, id security.PrivateID, c storage.StoreConfig, author security.PublicID) (*bao.Bao, error) {
-	return bao.Open(db, id, c, author)
+// OpenVault opens an existing bao vault with the provided identity, URL, and author.
+func OpenVault(realm Realm, userPrivateID security.PrivateID, author security.PublicID, s store.Store, db *sqlx.DB) (*vault.Vault, error) {
+	return vault.Open(realm, userPrivateID, author, s, db)
 }
 
-// SQL attaches a BaoQL layer for replicated SQL over the vault.
-func SQL(s *bao.Bao, group bao.Group, db *sqlx.DB) (*ql.BaoQL, error) {
-	return ql.SQL(s, group, db)
+// OpenReplica opens a SQL-like layer for the specified bao vault and group.
+func OpenReplica(s *vault.Vault, db *sqlx.DB) (*replica.Replica, error) {
+	return replica.Open(s, db)
 }
 
-type StoreConfig = storage.StoreConfig
+type StoreConfig = store.StoreConfig

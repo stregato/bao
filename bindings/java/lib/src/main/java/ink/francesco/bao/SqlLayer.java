@@ -14,22 +14,26 @@ public class SqlLayer {
     }
 
     public Map<String, Object> exec(String sql, Map<String, Object> args) throws Exception {
-        Result res = BaoLibrary.instance.baoql_exec(hnd, sql, mapper.writeValueAsString(args));
+        Result res = BaoLibrary.instance.bao_replica_exec(hnd, sql, mapper.writeValueAsString(args));
         return res.map();
     }
 
     public Rows query(String sql, Map<String, Object> args) throws Exception {
-        Result res = BaoLibrary.instance.baoql_query(hnd, sql, mapper.writeValueAsString(args));
+        Result res = BaoLibrary.instance.bao_replica_query(hnd, sql, mapper.writeValueAsString(args));
         res.check();
         return new Rows(res.hnd);
     }
 
     public void syncTables() {
-        BaoLibrary.instance.baoql_sync_tables(hnd).check();
+        BaoLibrary.instance.bao_replica_sync(hnd).check();
     }
 
     public void cancel() {
-        BaoLibrary.instance.baoql_cancel(hnd).check();
+        BaoLibrary.instance.bao_replica_cancel(hnd).check();
+    }
+
+    public void close() {
+        BaoLibrary.instance.bao_replica_cancel(hnd).check();
     }
 
     public class Rows implements Iterator<Map<String, Object>>, Iterable<Map<String, Object>> {
@@ -43,12 +47,13 @@ public class SqlLayer {
         @Override
         public boolean hasNext() {
             try {
-                Result r = BaoLibrary.instance.baoql_next(rowsHandle);
-                var err = r.getError();
-                if (err != null || r.hnd == 0) {
+                Result r = BaoLibrary.instance.bao_replica_next(rowsHandle);
+                r.check();
+                boolean more = r.obj(Boolean.class);
+                if (!more) {
                     return false;
                 }
-                next = r.map();
+                next = current();
                 return true;
             } catch (Exception e) {
                 return false;
@@ -66,13 +71,13 @@ public class SqlLayer {
         }
 
         public Map<String, Object> current() throws Exception {
-            Result r = BaoLibrary.instance.baoql_current(rowsHandle);
+            Result r = BaoLibrary.instance.bao_replica_current(rowsHandle);
             r.check();
             return r.map();
         }
 
         public void close() throws Exception {
-            BaoLibrary.instance.baoql_closeRows(rowsHandle).check();
+            BaoLibrary.instance.bao_replica_closeRows(rowsHandle).check();
         }
     }
 }
