@@ -8,12 +8,13 @@ import java.util.Map;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-public class Bao {
+public class Vault {
 
-    public static String GROUP_USERS = "users";
-    public static String GROUP_ADMINS = "admins";
+    public static String USERS = "users";
+    public static String HOME = "home";
+    public static String ALL = "all";
 
-    public record AccessChange(String group, int access, String userId) {}
+    public record AccessChange(int access, String userId) {}
 
     long hnd;
     String id;
@@ -26,20 +27,20 @@ public class Bao {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    static public Bao create(String identity, DB db, Store store, Map<String, Object> settings) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_create(identity, db.hnd, store.hnd, mapper.writeValueAsString(settings));
+    static public Vault create(String realm, String identity, Store store, DB db, Map<String, Object> settings) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_create(realm, identity, store.hnd, db.hnd, mapper.writeValueAsString(settings));
         r.check();
         return fromResult(r);
     }
 
-    static public Bao open(String identity, DB db, Store store, Map<String, Object> settings, String author) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_open(identity, db.hnd, store.hnd, mapper.writeValueAsString(settings), author);
+    static public Vault open(String realm, String identity, String author, Store store, DB db) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_open(realm, identity, author, store.hnd, db.hnd);
         r.check();
         return fromResult(r);
     }
 
-    private static Bao fromResult(Result r) throws Exception {
-        var s = new Bao();
+    private static Vault fromResult(Result r) throws Exception {
+        var s = new Vault();
         s.hnd = r.hnd;
         var m = r.map();
         s.id = (String) m.getOrDefault("id", "");
@@ -78,9 +79,9 @@ public class Bao {
         r.check();
     }
 
-    public Map<String, Integer> getAccess(String groupName) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_getAccess(hnd, groupName);
-        return r.map(Integer.class);
+    public int getAccess(String userId) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_getAccess(hnd, userId);
+        return r.integer();
     }
 
     public Map<String, Integer> getGroups(String user) throws Exception {
@@ -138,8 +139,8 @@ public class Bao {
         return FileInfo.fromMap(r.map());
     }
 
-    public FileInfo write(String dest, String group, byte[] attrs, String src, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_write(hnd, dest, src, group, new Data(attrs), options);
+    public FileInfo write(String dest, byte[] attrs, String src, long options) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_write(hnd, dest, src, new Data(attrs), options);
         return FileInfo.fromMap(r.map());
     }
 
@@ -147,13 +148,10 @@ public class Bao {
         BaoLibrary.instance.bao_vault_delete(hnd, name, options).check();
     }
 
-    public SqlLayer sqlLayer(String group, DB db) throws Exception {
-        Result r = BaoLibrary.instance.bao_replica_open(hnd, group, (int) db.hnd);
-        r.check();
-        return new SqlLayer(r.hnd);
-    }
-
-    public Mailbox mailbox() {
-        return new Mailbox(this);
+    public List<FileInfo> versions(String name) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_versions(hnd, name);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> raw = (List<Map<String, Object>>) (List<?>) r.list(Map.class);
+        return raw.stream().map(FileInfo::fromMap).toList();
     }
 }

@@ -212,14 +212,14 @@ name = :name ORDER BY modTime LIMIT 1 OFFSET :version
 
 -- GET_FILE_VERSIONS 1.0
 SELECT id, modTime, size, allocatedSize, flags FROM files WHERE vault=:vault AND dir=:dir AND 
-name=:name ORDER BY modTime DESC 
+name=:name ORDER BY modTime ASC 
 
 -- GET_LATEST_STORE_DIR 1.0
 SELECT storeDir FROM files WHERE vault = :vault AND storeDir LIKE :baseDir || '%'
 ORDER BY id DESC LIMIT 1
 
 -- STAT_FILE 1.0
-SELECT id, modTime, size, allocatedSize, flags, attrs, "group" FROM files 
+SELECT id, dir, name, "group", storeDir, storeName, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs FROM files 
 WHERE vault = :vault AND dir = :dir AND name = :name 
 ORDER BY modTime DESC LIMIT 1
 

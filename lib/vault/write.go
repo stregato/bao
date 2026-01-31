@@ -38,15 +38,15 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 	if source != "" {
 		stat, err := os.Stat(source)
 		if err != nil {
-			return File{}, core.Errorw("cannot stat source file %s in Bao.Write, name %v, source %v", dest, dest, source, err)
+			return File{}, core.Error(core.FileError, "cannot stat source file %s in Bao.Write, name %v, source %v", dest, dest, source, err)
 		}
 		if stat.IsDir() {
-			return File{}, core.Errorw("source file %s is a directory in Bao.Write, name %v, source %v", dest, dest, source, err)
+			return File{}, core.Error(core.FileError, "source file %s is a directory in Bao.Write, name %v, source %v", dest, dest, source, err)
 		}
 		size = stat.Size()
 	}
 	if v.Config.MaxStorage > 0 && v.allocatedSize+size > v.Config.MaxStorage {
-		return File{}, core.Errorw("cannot write file %s in vaultgroup %s: allocated size limit exceeded", dest, v.ID, os.ErrPermission)
+		return File{}, core.Error(core.FileError, "cannot write file %s in vaultgroup %s: allocated size limit exceeded", dest, v.ID, os.ErrPermission)
 	}
 
 	baseFolder := path.Join(v.Realm.String(), DataFolder)
@@ -60,7 +60,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 	default:
 		keyId, _, err = v.getLastKeyFromDB()
 		if err != nil {
-			return File{}, core.Errorw("cannot get key id for %v", dest, err)
+			return File{}, core.Error(core.DbError, "cannot get key id for %v", dest, err)
 		}
 	}
 
@@ -82,7 +82,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 
 	file, err = v.writeFileHeadToDB(file)
 	if err != nil {
-		return File{}, core.Errorw("cannot write file head to DB for %s", dest, err)
+		return File{}, core.Error(core.DbError, "cannot write file head to DB for %s", dest, err)
 	}
 
 	core.End("successfully wrote record to %s", dest)
@@ -105,7 +105,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	file.Flags &= ^PendingWrite // Clear the PendingWrite flag
 	head, err := encodeHead(v.Realm, file, v.UserID, v.getKey)
 	if err != nil {
-		return core.Errorw("cannot encode head in Bao.Write", err)
+		return core.Error(core.EncodeError, "cannot encode head in Bao.Write", err)
 	}
 
 	var err2 error
@@ -120,7 +120,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 		core.Start("path %s", storePath)
 		err := store.WriteFile(v.store, storePath, head)
 		if err != nil {
-			err2 = core.Errorw("cannot write head for file %s in Bao.Write, name %v, group %v",
+			err2 = core.Error(core.FileError, "cannot write head for file %s in Bao.Write, name %v, group %v",
 				file.Name, file.StoreName, file.StoreDir, err)
 		} else {
 			core.End("")
@@ -130,20 +130,20 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	if file.LocalCopy != "" {
 		f, err := os.Open(file.LocalCopy)
 		if err != nil {
-			return core.Errorw("cannot open local file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot open local file %s in Bao.Write, name %v, group %v",
 				file.LocalCopy, file.Name, file.StoreDir, err)
 		}
 		defer f.Close()
 
 		r, err := encryptReader(v.Realm, file, f, v.getKey)
 		if err != nil {
-			return core.Errorw("cannot encrypt reader for file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot encrypt reader for file %s in Bao.Write, name %v, group %v",
 				file.Name, file.LocalCopy, file.StoreDir, err)
 		}
 		storePath := path.Join(file.StoreDir, "b", file.StoreName)
 		err = v.store.Write(storePath, r, progress)
 		if err != nil {
-			return core.Errorw("cannot write body for file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot write body for file %s in Bao.Write, name %v, group %v",
 				file.Name, file.LocalCopy, file.StoreDir, err)
 		}
 	}
@@ -171,7 +171,7 @@ func (v *Vault) Write(dest, source string, attrs []byte, options IOOption, progr
 
 	file, err := v.writeRecord(dest, source, PendingWrite, attrs)
 	if err != nil {
-		return File{}, core.Errorw("cannot write record for file %s in %s", dest, v.Realm, err)
+		return File{}, core.Error(core.FileError, "cannot write record for file %s in %s", dest, v.Realm, err)
 	}
 
 	switch {
@@ -184,7 +184,7 @@ func (v *Vault) Write(dest, source string, attrs []byte, options IOOption, progr
 		// If neither Async nor Scheduled is set, we can write the file synchronously
 		err = v.writeFile(file, progress)
 		if err != nil {
-			return File{}, core.Errorw("cannot write file %s", file.Name, err)
+			return File{}, core.Error(core.FileError, "cannot write file %s", file.Name, err)
 		}
 	}
 
@@ -229,7 +229,7 @@ func (v *Vault) checkAndUpdateExternalChange() bool {
 		return false
 	}
 	if err != nil {
-		core.Errorw("FUNC_END[checkAndUpdateExternalChange]: cannot stat last change file %s", lastChangeFile, err)
+		core.Error(core.DbError, "FUNC_END[checkAndUpdateExternalChange]: cannot stat last change file %s", lastChangeFile, err)
 		core.End("no changes")
 		return false
 	}

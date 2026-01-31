@@ -25,7 +25,7 @@ type Local struct {
 func OpenLocal(id string, c LocalConfig) (Store, error) {
 	core.Start("Opening local store.with URL: %s", c.Base)
 	if c.Base == "" {
-		return nil, core.Errorw("base path is required for local store", nil)
+		return nil, core.Error(core.FileError, "base path is required for local store", nil)
 	}
 
 	core.End("Opened local store.with path: %s", c.Base)
@@ -43,7 +43,7 @@ func (l *Local) Read(name string, rang *Range, dest io.Writer, progress chan int
 		return err
 	}
 	if err != nil {
-		return core.Errorw("cannot open file on %v:%v", l, err)
+		return core.Error(core.FileError, "cannot open file on %v:%v", l, err)
 	}
 
 	if rang == nil {
@@ -67,7 +67,7 @@ func (l *Local) Read(name string, rang *Range, dest io.Writer, progress chan int
 	}
 	if err != nil {
 		logrus.Errorf("Cannot read from file: %v", err)
-		return core.Errorw("cannot read from %s/%s:%v", l, name, err)
+		return core.Error(core.GenericError, "cannot read from %s/%s:%v", l, name, err)
 	}
 
 	core.End("Successfully read file: %s", name)
@@ -78,7 +78,7 @@ func createDir(n string) error {
 	core.Start("Creating directory: %s", n)
 	err := os.MkdirAll(filepath.Dir(n), 0755)
 	if err != nil {
-		return core.Errorw("cannot create directory %s", filepath.Dir(n), err)
+		return core.Error(core.FileError, "cannot create directory %s", filepath.Dir(n), err)
 	}
 	core.End("successfully created directory: %s", filepath.Dir(n))
 	return nil
@@ -89,19 +89,19 @@ func (l *Local) Write(name string, source io.ReadSeeker, progress chan int64) er
 	n := filepath.Join(l.base, name)
 	err := createDir(n)
 	if err != nil {
-		return core.Errorw("cannot create parent of %s", n, err)
+		return core.Error(core.GenericError, "cannot create parent of %s", n, err)
 	}
 
 	f, err := os.Create(n)
 	if err != nil {
-		return core.Errorw("cannot create file on %v:%v", l, err)
+		return core.Error(core.FileError, "cannot create file on %v:%v", l, err)
 	}
 	defer f.Close()
 
 	sz, err := io.Copy(f, source)
 	if err != nil {
 		os.Remove(n)
-		return core.Errorw("cannot copy file on %v:%v", l, err)
+		return core.Error(core.FileError, "cannot copy file on %v:%v", l, err)
 	}
 
 	if progress != nil {
@@ -119,7 +119,7 @@ func (l *Local) ReadDir(dir string, filter Filter) ([]fs.FileInfo, error) {
 		return nil, err
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot read directory %s", dir, err)
+		return nil, core.Error(core.FileError, "cannot read directory %s", dir, err)
 	}
 
 	var infos []fs.FileInfo
@@ -146,7 +146,7 @@ func (l *Local) Stat(name string) (os.FileInfo, error) {
 		return nil, err
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot stat file on %v:%v", l, name, err)
+		return nil, core.Error(core.FileError, "cannot stat file on %v:%v", l, name, err)
 	}
 	core.End("got file info for: %s", name)
 	return f, nil
@@ -156,7 +156,7 @@ func (l *Local) Rename(old, new string) error {
 	core.Start("Renaming file from %s to %s", old, new)
 	err := os.Rename(path.Join(l.base, old), path.Join(l.base, new))
 	if err != nil {
-		return core.Errorw("cannot rename file from %s to %s on %v:%v", old, new, l.base, l.id, err)
+		return core.Error(core.FileError, "cannot rename file from %s to %s on %v:%v", old, new, l.base, l.id, err)
 	}
 	core.End("renamed file from %s to %s", old, new)
 	return nil
@@ -166,7 +166,7 @@ func (l *Local) Delete(name string) error {
 	core.Start("Deleting file: %s", name)
 	err := os.RemoveAll(path.Join(l.base, name))
 	if err != nil {
-		return core.Errorw("cannot delete file %s on %v:%v", name, l.base, l.id, err)
+		return core.Error(core.DbError, "cannot delete file %s on %v:%v", name, l.base, l.id, err)
 	}
 	core.End("deleted file %s", name)
 	return err

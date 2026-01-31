@@ -82,7 +82,7 @@ func baoOpen(this js.Value, args []js.Value) (any, error) {
 
 func baoWrite(this js.Value, args []js.Value) (any, error) {
 	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
 	name := args[0].String()
 	group := libbao.Group(args[1].String())
@@ -97,7 +97,7 @@ func baoWrite(this js.Value, args []js.Value) (any, error) {
 
 func baoRead(this js.Value, args []js.Value) (any, error) {
 	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
 	name := args[0].String()
 	// create a temp destination filename in-memory path (JS can't write files; but API requires a dest string)
@@ -112,7 +112,7 @@ func baoRead(this js.Value, args []js.Value) (any, error) {
 
 func baoList(this js.Value, args []js.Value) (any, error) {
 	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
 	dir := args[0].String()
 	ls, err := demoStash.ReadDir(dir, time.Time{}, 0, 0)

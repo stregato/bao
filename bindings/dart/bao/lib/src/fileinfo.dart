@@ -6,7 +6,6 @@ import 'package:bao/bao.dart';
 class FileInfo {
   late int id;
   late String name;
-  late Group group;
   late int size;
   late int allocatedSize;
   late DateTime modTime;
@@ -25,7 +24,6 @@ class FileInfo {
     id = map['id'] ?? 0;
     name = map['name'];
     size = map['size'];
-    group = map['group'] as Group;
     modTime = DateTime.parse(map['modTime']);
     isDir = map['isDir'];
     flags = map['flags'] ?? 0;

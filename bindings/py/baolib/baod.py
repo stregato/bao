@@ -3,13 +3,8 @@ import platform
 import os
 import json
 from dataclasses import dataclass, asdict
-from datetime import datetime
-import pytz
-import pkg_resources
+from datetime import datetime, timezone
 import base64
-import os
-import platform
-import ctypes
 
 def load_lib():
     # Directly using normalized architecture names in the paths dictionary
@@ -61,7 +56,7 @@ def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, datetime):
         if not obj.tzinfo:
-            obj = pytz.utc.localize(obj)
+            obj = obj.replace(tzinfo=timezone.utc)
         return obj.isoformat()
     raise TypeError("Type %s not serializable" % type(obj))
 

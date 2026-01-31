@@ -41,7 +41,7 @@ func NewHash(base []byte) hash.Hash {
 func NewHashReader(r io.ReadSeekCloser) (*HashReader, error) {
 	b, err := blake2b.New256(nil)
 	if err != nil {
-		return nil, core.Errorw("cannot create black hash", err)
+		return nil, core.Error(core.GenericError, "cannot create black hash", err)
 	}
 	return &HashReader{
 		Hash: b,
@@ -52,7 +52,7 @@ func NewHashReader(r io.ReadSeekCloser) (*HashReader, error) {
 func NewHashWriter(w io.Writer) (*HashWriter, error) {
 	b, err := blake2b.New256(nil)
 	if err != nil {
-		return nil, core.Errorw("cannot create black hash", err)
+		return nil, core.Error(core.GenericError, "cannot create black hash", err)
 	}
 	return &HashWriter{
 		Hash: b,
@@ -103,12 +103,12 @@ func FileHash(name string) ([]byte, error) {
 
 	f, err := os.Open(name)
 	if err != nil {
-		return nil, core.Errorw("cannot open file '%s'", name, err)
+		return nil, core.Error(core.FileError, "cannot open file '%s'", name, err)
 	}
 
 	_, err = io.Copy(h, f)
 	if err != nil {
-		return nil, core.Errorw("cannot read file '%s'", name, err)
+		return nil, core.Error(core.FileError, "cannot read file '%s'", name, err)
 	}
 
 	return h.Sum(nil), nil

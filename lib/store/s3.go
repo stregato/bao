@@ -95,7 +95,7 @@ func OpenS3(id string, c S3Config) (Store, error) {
 
 	cfg, err := config.LoadDefaultConfig(context.TODO(), options...)
 	if err != nil {
-		return nil, core.Errorw("cannot create S3 config for %s: %v", id, err)
+		return nil, core.Error(core.ConfigError, "cannot create S3 config for %s: %v", id, err)
 	}
 
 	s := &S3{
@@ -108,7 +108,7 @@ func OpenS3(id string, c S3Config) (Store, error) {
 	err = s.createBucketIfNeeded()
 	if err != nil {
 		err = s.mapError(err)
-		return nil, core.Errorw("cannot create bucket %s", c.Bucket, err)
+		return nil, core.Error(core.GenericError, "cannot create bucket %s", c.Bucket, err)
 	}
 
 	core.End("")
@@ -134,7 +134,7 @@ func (s *S3) createBucketIfNeeded() error {
 		Bucket: aws.String(s.bucket),
 	})
 	if err != nil {
-		return core.Errorw("cannot create bucket %s", s.bucket, err)
+		return core.Error(core.GenericError, "cannot create bucket %s", s.bucket, err)
 	}
 	core.End("")
 	return nil
@@ -154,12 +154,12 @@ func (s *S3) Read(name string, rang *Range, dest io.Writer, progress chan int64)
 		if os.IsNotExist(err) {
 			return err
 		}
-		return core.Errorw("cannot read %s/%s", s, name, err)
+		return core.Error(core.GenericError, "cannot read %s/%s", s, name, err)
 	}
 
 	_, err = io.Copy(dest, rawObject.Body)
 	if err != nil {
-		return core.Errorw("cannot read %s/%s", s, name, err)
+		return core.Error(core.GenericError, "cannot read %s/%s", s, name, err)
 	}
 
 	rawObject.Body.Close()
@@ -173,7 +173,7 @@ func (s *S3) Write(name string, source io.ReadSeeker, progress chan int64) error
 
 	size, err := source.Seek(0, io.SeekEnd)
 	if err != nil {
-		return core.Errorw("cannot seek source for '%s'", name, err)
+		return core.Error(core.GenericError, "cannot seek source for '%s'", name, err)
 	}
 	source.Seek(0, io.SeekStart)
 
@@ -188,7 +188,7 @@ func (s *S3) Write(name string, source io.ReadSeeker, progress chan int64) error
 		if os.IsNotExist(err) {
 			return err
 		}
-		return core.Errorw("cannot write %s/%s", s, name, err)
+		return core.Error(core.GenericError, "cannot write %s/%s", s, name, err)
 	}
 	core.End("")
 	return nil
@@ -311,7 +311,7 @@ func (s *S3) Stat(name string) (fs.FileInfo, error) {
 	// 	return s.Stat(name + "/")
 	// }
 	if err != nil {
-		return nil, core.Errorw("cannot stat %s/%s", s, name, err)
+		return nil, core.Error(core.GenericError, "cannot stat %s/%s", s, name, err)
 	}
 
 	core.End("")
@@ -353,7 +353,7 @@ func (s *S3) Delete(name string) error {
 				Key:    item.Key,
 			})
 			if err != nil {
-				return core.Errorw("cannot delete %s", *item.Key, s.mapError(err))
+				return core.Error(core.DbError, "cannot delete %s", *item.Key, s.mapError(err))
 			}
 		}
 	} else {
@@ -362,7 +362,7 @@ func (s *S3) Delete(name string) error {
 			Key:    &name,
 		})
 		if err != nil {
-			return core.Errorw("cannot delete %s", name, s.mapError(err))
+			return core.Error(core.DbError, "cannot delete %s", name, s.mapError(err))
 		}
 	}
 	core.End("")

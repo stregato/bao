@@ -14,39 +14,47 @@ import (
 )
 
 func TestVaultWrite(t *testing.T) {
-	alice := security.NewPrivateIDMust()
+	alice, aliceSecret, err := security.NewKeyPair()
+	core.TestErr(t, err, "cannot create keys")
+	bob, bobSecret, err := security.NewKeyPair()
+	core.TestErr(t, err, "cannot create keys")
+
 	db := sqlx.NewTestDB(t, "vault.db", "")
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(Users, aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
+
+	err = v.SyncAccess(0, AccessChange{
+		UserId: bob,
+		Access: Read,
+	})
+	core.TestErr(t, err, "SyncAccess failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
 	err = os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 	core.TestErr(t, err, "WriteFile failed: %v")
 	attrs := []byte{1, 2, 3, 4, 5}
-	file, err := s.Write("simple.txt", tmpFile, attrs, ScheduledOperation, nil)
+	file, err := v.Write("folder/simple.txt", tmpFile, attrs, ScheduledOperation, nil)
 	core.TestErr(t, err, "Write failed: %v")
 
-	err = s.WaitFiles(file.Id)
+	err = v.WaitFiles(file.Id)
 	core.TestErr(t, err, "Sync failed: %v")
-	// core.Assert(t, len(files) == 1, "Expected one file after sync")
-	// core.Assert(t, files[0].Name == "simple.txt", "Expected file name to be 'simple.txt'")
-	// core.Assert(t, files[0].Size == 11, "Expected file size to be 11")
-	// core.Assert(t, files[0].ModTime.Unix() > 0, "Expected file mod time to be set")
-	// core.Assert(t, files[0].IsDir == false, "Expected file to not be a directory")
-	// core.Assert(t, files[0].Id > 0, "Expected file ID to be greater than 0")
-	// core.Assert(t, len(files[0].Attrs) == len(attrs), "Expected file attrs data to match")
-	// core.Assert(t, bytes.Equal(files[0].Attrs, attrs), "Expected file attrs data to match")
+	v.Close()
+	db.Close()
 
-	ls, err := s.ReadDir("", time.Time{}, 0, 0)
+	db = sqlx.NewTestDB(t, "vault2.db", "")
+	v, err = Open(Users, bobSecret, alice, store, db)
+	core.TestErr(t, err, "Open failed: %v")
+
+	ls, err := v.ReadDir("folder", time.Time{}, 0, 0)
 	core.TestErr(t, err, "")
 	core.Assert(t, len(ls) == 1, "")
 
-	f, err := s.Stat("simple.txt")
+	f, err := v.Stat("folder/simple.txt")
 	core.TestErr(t, err, "Stat failed: %v")
-	core.Assert(t, f.Name == "simple.txt", "")
+	core.Assert(t, f.Name == "folder/simple.txt", "")
 	core.Assert(t, f.Size == 11, "")
 	core.Assert(t, f.AllocatedSize >= f.Size, "")
 	core.Assert(t, f.ModTime.Unix() > 0, "")
@@ -54,23 +62,24 @@ func TestVaultWrite(t *testing.T) {
 	core.Assert(t, f.Id > 0, "")
 
 	tmpFile2 := t.TempDir() + "/simple2.txt"
-	file, err = s.Read("simple.txt", tmpFile2, AsyncOperation, nil)
+	file, err = v.Read("folder/simple.txt", tmpFile2, 0, nil)
 	core.TestErr(t, err, "Read failed: %v")
-	core.Assert(t, file.Name == "simple.txt", "")
+	core.Assert(t, file.Name == "folder/simple.txt", "")
 	core.Assert(t, file.Size == 11, "")
 	core.Assert(t, file.AllocatedSize >= file.Size, "")
 	core.Assert(t, file.ModTime.Unix() > 0, "")
 	core.Assert(t, file.IsDir == false, "")
 	core.Assert(t, file.Id > 0, "")
-	s.WaitFiles(file.Id)
+	err = v.WaitFiles(file.Id)
+	core.TestErr(t, err, "WaitFiles failed: %v")
 
 	content, err := os.ReadFile(tmpFile2)
 	core.TestErr(t, err, "ReadFile failed: %v")
 	core.Assert(t, string(content) == "Hello World", "")
 
-	s.Delete("simple.txt", 0)
-
-	s.Close()
+	v.Delete("simple.txt", 0)
+	v.Close()
+	db.Close()
 }
 
 func TestWritePublic(t *testing.T) {

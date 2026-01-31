@@ -27,7 +27,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	// 1. Get the last store directory with prefix baseFolder
 	lastStoreDir, err := v.findLastStoreDirIn(baseDir)
 	if err != nil {
-		return nil, core.Errorw("cannot find last store dir", err)
+		return nil, core.Error(core.GenericError, "cannot find last store dir", err)
 	}
 
 	var minSegment string
@@ -53,7 +53,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 
 		knowns, err2 := v.getKnownFilesNames(storeDir)
 		if err2 != nil {
-			return nil, core.Errorw("cannot get known files in sealed dir %s", storeDir, err2)
+			return nil, core.Error(core.DbError, "cannot get known files in sealed dir %s", storeDir, err2)
 		}
 
 		n := 0
@@ -111,7 +111,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 		}
 	}
 	if errX != nil {
-		return nil, core.Errorw("errors occurred during synchronization", errX)
+		return nil, core.Error(core.GenericError, "errors occurred during synchronization", errX)
 	}
 
 	core.End("synchronized vault %s in %s, %d new files", v.ID, time.Since(now), len(newFiles))
@@ -128,7 +128,7 @@ func (v *Vault) findLastStoreDirIn(baseDir string) (string, error) {
 		"baseDir": baseDir,
 	}, &lastStoreDir)
 	if err != nil && err != sql.ErrNoRows {
-		return "", core.Errorw("cannot get latest sealed file", err)
+		return "", core.Error(core.DbError, "cannot get latest sealed file", err)
 	}
 
 	core.End("last store dir %s", lastStoreDir)
@@ -168,7 +168,7 @@ func (v *Vault) getKnownFilesNames(storeDir string) (map[string]bool, error) {
 		return nil, nil // No files in sealed directory
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot get files in sealed dir %s", storeDir, err)
+		return nil, core.Error(core.DbError, "cannot get files in sealed dir %s", storeDir, err)
 	}
 	defer rows.Close()
 	files := make(map[string]bool)
@@ -176,7 +176,7 @@ func (v *Vault) getKnownFilesNames(storeDir string) (map[string]bool, error) {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-			return nil, core.Errorw("cannot scan file name in sealed dir %s", storeDir, err)
+			return nil, core.Error(core.FileError, "cannot scan file name in sealed dir %s", storeDir, err)
 		}
 		files[name] = true
 	}
@@ -191,25 +191,21 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (File, error) {
 	n := path.Join(storeDir, "h", storeName)
 	head, err := store.ReadFile(v.store, n)
 	if err != nil {
-		return File{}, core.Errorw("cannot read sealed file %s", n, err)
+		return File{}, core.Error(core.FileError, "cannot read sealed file %s", n, err)
 	}
 
 	file, err := decodeHead(v.Realm, head, v.UserID, v.getKey, v.getUserByShortId)
 	if err != nil {
-		return File{}, core.Errorw("cannot decode file head %s", n, err)
+		return File{}, core.Error(core.FileError, "cannot decode file head %s", n, err)
 	}
 
 	file.AllocatedSize = int64(len(head)) + file.Size
 	file.StoreDir = storeDir
 	file.StoreName = storeName
-	group, err := v.getGroupFromKey(file.KeyId)
-	if err != nil {
-		return File{}, core.Errorw("cannot get group from key %d for file %s", file.KeyId, n, err)
-	}
-	file.Realm = group
+	file.Realm = v.Realm
 	file, err = v.writeFileHeadToDB(file)
 	if err != nil {
-		return File{}, core.Errorw("cannot write file head to DB for %s", n, err)
+		return File{}, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
 	}
 
 	v.allocatedSize += file.AllocatedSize
@@ -243,11 +239,11 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 		"attrs":          file.Attrs,
 	})
 	if err != nil {
-		return File{}, core.Errorw("cannot set file %s/%s", dir, name, err)
+		return File{}, core.Error(core.DbError, "cannot set file %s/%s", dir, name, err)
 	}
 	id, err := r.LastInsertId()
 	if err != nil {
-		return File{}, core.Errorw("cannot get last insert id for file %s/%s", dir, name, err)
+		return File{}, core.Error(core.DbError, "cannot get last insert id for file %s/%s", dir, name, err)
 	}
 	count, _ := r.RowsAffected()
 	if dir == "" || count == 0 {
@@ -262,7 +258,7 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 		_, err = v.DB.Exec("SET_DIR", sqlx.Args{"vault": v.ID, "dir": dir, "group": file.Realm,
 			"name": name})
 		if err != nil {
-			return File{}, core.Errorw("cannot set directory %s/%s", dir, name, err)
+			return File{}, core.Error(core.DbError, "cannot set directory %s/%s", dir, name, err)
 		}
 	}
 	file.Id = FileId(id)

@@ -14,11 +14,11 @@ func (v *Vault) SetAttribute(options IOOption, name, value string) error {
 	}
 	bc, err := marshalChange(change)
 	if err != nil {
-		return core.Errorw("cannot marshal attribute change %s for user %s", name, v.UserPublicID, err)
+		return core.Error(core.ParseError, "cannot marshal attribute change %s for user %s", name, v.UserPublicID, err)
 	}
 	err = v.stageBlockChange(bc)
 	if err != nil {
-		return core.Errorw("cannot stage blockchain change for attribute %s", name, err)
+		return core.Error(core.GenericError, "cannot stage blockchain change for attribute %s", name, err)
 	}
 
 	switch {
@@ -29,7 +29,7 @@ func (v *Vault) SetAttribute(options IOOption, name, value string) error {
 	default:
 		err = v.syncBlockChain()
 		if err != nil {
-			return core.Errorw("cannot synchronize blockchain for attribute change", err)
+			return core.Error(core.GenericError, "cannot synchronize blockchain for attribute change", err)
 		}
 	}
 
@@ -46,7 +46,7 @@ func (v *Vault) GetAttribute(name string, author security.PublicID) (string, err
 		"id":    author,
 	}, &value)
 	if err != nil {
-		return "", core.Errorw("cannot get attribute %s for id %s", name, author, err)
+		return "", core.Error(core.DbError, "cannot get attribute %s for id %s", name, author, err)
 	}
 	core.End("successfully got attribute %s for id %s: %s", name, author, value)
 	return value, nil
@@ -60,14 +60,14 @@ func (v *Vault) GetAttributes(author security.PublicID) (map[string]string, erro
 		"id":    author,
 	})
 	if err != nil {
-		return nil, core.Errorw("cannot list attributes for id %s", author, err)
+		return nil, core.Error(core.GenericError, "cannot list attributes for id %s", author, err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var name, value string
 		if err := rows.Scan(&name, &value); err != nil {
-			return nil, core.Errorw("cannot scan attribute for id %s", author, err)
+			return nil, core.Error(core.GenericError, "cannot scan attribute for id %s", author, err)
 		}
 		attrs[name] = value
 	}

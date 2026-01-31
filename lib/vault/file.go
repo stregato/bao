@@ -54,7 +54,7 @@ func (v *Vault) queryFileById(fileId FileId) (file File, ok bool, err error) {
 		return File{}, false, nil
 	}
 	if err != nil {
-		return File{}, false, core.Errorw("cannot get file by id %d", fileId, err)
+		return File{}, false, core.Error(core.DbError, "cannot get file by id %d", fileId, err)
 	}
 	file.Name = path.Join(dir, name)
 	file.ModTime = time.UnixMilli(modTimeUnix)
@@ -75,13 +75,13 @@ func (v *Vault) queryFileByName(name string) (file File, ok bool, err error) {
 	if colonIdx == 0 {
 		id, err := strconv.ParseUint(name[1:], 16, 64)
 		if err != nil {
-			return File{}, false, core.Errorw("cannot parse id %s", name[1:], err)
+			return File{}, false, core.Error(core.ParseError, "cannot parse id %s", name[1:], err)
 		}
 		return v.queryFileById(FileId(id))
 	} else if colonIdx >= 1 {
 		version, err = strconv.Atoi(name[colonIdx+1:])
 		if err != nil {
-			return File{}, false, core.Errorw("cannot parse version %s", name[colonIdx+1:], err)
+			return File{}, false, core.Error(core.ParseError, "cannot parse version %s", name[colonIdx+1:], err)
 		}
 		name = name[:colonIdx]
 	}
@@ -100,7 +100,7 @@ func (v *Vault) queryFileByName(name string) (file File, ok bool, err error) {
 			core.End("file not found")
 			return File{}, false, nil
 		}
-		return File{}, false, core.Errorw("cannot get encryption info for %s", name, err)
+		return File{}, false, core.Error(core.DbError, "cannot get encryption info for %s", name, err)
 	}
 	file.Name = path.Join(dir, file.Name)
 	file.ModTime = time.UnixMilli(modTimeUnix)
@@ -114,7 +114,7 @@ func (v *Vault) updateFileLocalName(fileId FileId, localCopy string) error {
 	// Update the local name of the file in the database
 	_, err := v.DB.Exec("UPDATE_FILE_LOCAL_NAME", sqlx.Args{"vault": v.ID, "id": fileId, "localCopy": localCopy})
 	if err != nil {
-		return core.Errorw("cannot update local name for file %d", fileId, err)
+		return core.Error(core.DbError, "cannot update local name for file %d", fileId, err)
 	}
 	core.End("updated local name for file %d to %s", fileId, localCopy)
 	return nil
@@ -126,7 +126,7 @@ func (v *Vault) queryFileIdsByFlags(flags Flags) ([]FileId, error) {
 	//	rows, err := s.DB.Query("GET_FILE_IDS_BY_FLAGS", sqlx.Args{"vault": s.Id, "flags": flags})
 	rows, err := v.DB.Query("GET_FILE_IDS_BY_FLAGS", sqlx.Args{"vault": v.ID, "flagsMask": flags})
 	if err != nil {
-		return nil, core.Errorw("cannot get file IDs by flags %d", flags, err)
+		return nil, core.Error(core.DbError, "cannot get file IDs by flags %d", flags, err)
 	}
 	defer rows.Close()
 
@@ -134,7 +134,7 @@ func (v *Vault) queryFileIdsByFlags(flags Flags) ([]FileId, error) {
 	for rows.Next() {
 		var id FileId
 		if err := rows.Scan(&id); err != nil {
-			return nil, core.Errorw("cannot scan file ID", err)
+			return nil, core.Error(core.FileError, "cannot scan file ID", err)
 		}
 		ids = append(ids, id)
 	}

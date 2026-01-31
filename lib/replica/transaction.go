@@ -24,7 +24,7 @@ func (ds *Replica) beginTransaction() error {
 	core.Start("")
 	tx, err := ds.db.Begin()
 	if err != nil {
-		return core.Errorw("cannot start transaction", err)
+		return core.Error(core.GenericError, "cannot start transaction", err)
 	}
 	ds.transaction = &transaction{
 		tx:      tx,
@@ -76,18 +76,18 @@ func (ds *Replica) Sync() (int, error) {
 
 	ls, err := ds.listUnreadTransactions()
 	if err != nil {
-		return 0, core.Errorw("cannot get transactions files", err)
+		return 0, core.Error(core.DbError, "cannot get transactions files", err)
 	}
 
 	transactions, err := ds.readTransactionFiles(ls)
 	if err != nil {
-		return 0, core.Errorw("cannot read transactions", err)
+		return 0, core.Error(core.GenericError, "cannot read transactions", err)
 	}
 
 	if ds.transaction != nil {
 		t, err := ds.writeUpdates()
 		if err != nil {
-			return 0, core.Errorw("cannot write updates in sql layer", err)
+			return 0, core.Error(core.DbError, "cannot write updates in sql layer", err)
 		}
 		transactions = append(transactions, t) // add the current transaction to the list
 	}
@@ -97,7 +97,7 @@ func (ds *Replica) Sync() (int, error) {
 
 	updates, err := ds.processTransactions(transactions)
 	if err != nil {
-		return 0, core.Errorw("cannot process transactions", err)
+		return 0, core.Error(core.GenericError, "cannot process transactions", err)
 	}
 
 	core.End("elapsed %s", time.Since(now))
@@ -110,21 +110,21 @@ func (ds *Replica) writeUpdates() (transaction, error) {
 	t := *ds.transaction
 	err := ds.transaction.tx.Rollback() // rollback the transaction to ensure it is not committed yet
 	if err != nil {
-		return transaction{}, core.Errorw("cannot rollback transaction", err)
+		return transaction{}, core.Error(core.GenericError, "cannot rollback transaction", err)
 	}
 
 	attrs, err := msgpack.Marshal(t)
 	if err != nil {
-		return transaction{}, core.Errorw("cannot marshal transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return transaction{}, core.Error(core.DbError, "cannot marshal transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
 	}
 	attrs, err = core.GzipCompress(attrs)
 	if err != nil {
-		return transaction{}, core.Errorw("cannot compress transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return transaction{}, core.Error(core.DbError, "cannot compress transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
 	}
 	name := strconv.FormatUint(core.SnowID(), 16) // generate a unique name for the transaction file
 	file, err := ds.vault.Write(path.Join(sqlLayerDir, name), "", attrs, 0, nil)
 	if err != nil {
-		return transaction{}, core.Errorw("cannot write transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return transaction{}, core.Error(core.DbError, "cannot write transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
 	}
 
 	ds.transaction = nil // reset the transaction to nil after writing
@@ -144,7 +144,7 @@ func (ds *Replica) Cancel() error {
 
 	err := ds.transaction.tx.Rollback()
 	if err != nil {
-		return core.Errorw("cannot rollback transaction", err)
+		return core.Error(core.GenericError, "cannot rollback transaction", err)
 	}
 	ds.transaction = nil
 
@@ -160,7 +160,7 @@ func (ds *Replica) listUnreadTransactions() (ls []vault.File, err error) {
 			core.End("no transaction files")
 			return nil, nil // no files found, nothing to process
 		}
-		return nil, core.Errorw("cannot read files in bao_ql", err)
+		return nil, core.Error(core.FileError, "cannot read files in bao_ql", err)
 	}
 
 	slices.SortFunc(files, func(a, b vault.File) int {
@@ -177,7 +177,7 @@ func (ds *Replica) readTransactionFiles(ls []vault.File) (transactions []transac
 	for _, fi := range ls {
 		transaction, err := ds.readTransaction(fi)
 		if err != nil {
-			core.Errorw("cannot read transaction", err)
+			core.Error(core.GenericError, "cannot read transaction", err)
 			continue
 		}
 		transaction.Id = max(fi.Id, transaction.Id) // set the transaction Id from the file Id
@@ -194,7 +194,7 @@ func (ds *Replica) processTransactions(t []transaction) (updates []Update, err e
 	for _, transaction := range t {
 		err = ds.processTransaction(transaction)
 		if err != nil {
-			return nil, core.Errorw("cannot process transaction %d", transaction.Id, err)
+			return nil, core.Error(core.GenericError, "cannot process transaction %d", transaction.Id, err)
 		}
 		updates = append(updates, transaction.Updates...)
 	}
@@ -208,13 +208,13 @@ func (ds *Replica) readTransaction(fi vault.File) (transaction, error) {
 
 	attrs, err := core.GzipDecompress(fi.Attrs)
 	if err != nil {
-		return transaction{}, core.Errorw("cannot decompress transaction %s", fi.Name, err)
+		return transaction{}, core.Error(core.EncodeError, "cannot decompress transaction %s", fi.Name, err)
 	}
 
 	reader := core.NewBytesReader(attrs)
 	err = msgpack.NewDecoder(reader).Decode(&t)
 	if err != nil {
-		return transaction{}, core.Errorw("cannot unmarshal transaction %s", fi.Name, err)
+		return transaction{}, core.Error(core.ParseError, "cannot unmarshal transaction %s", fi.Name, err)
 	}
 
 	core.End("%d updates", len(t.Updates))
@@ -226,7 +226,7 @@ func (ds *Replica) processTransaction(t transaction) error {
 	for _, u := range t.Updates {
 		_, err := ds.db.Exec(u.Key, u.Args)
 		if err != nil {
-			return core.Errorw("cannot execute transaction %s", u.Key, err)
+			return core.Error(core.GenericError, "cannot execute transaction %s", u.Key, err)
 		}
 	}
 	ds.lastId = int64(t.Id)
@@ -234,7 +234,7 @@ func (ds *Replica) processTransaction(t transaction) error {
 	_, err := ds.vault.DB.Exec("INSERT_TRANSACTION_METADATA", sqlx.Args{"vault": ds.vault.ID, "id": t.Id,
 		"tm": t.Tm, "success": true})
 	if err != nil {
-		return core.Errorw("cannot insert transaction metadata %d for %d updates", t.Id, len(t.Updates), err)
+		return core.Error(core.DbError, "cannot insert transaction metadata %d for %d updates", t.Id, len(t.Updates), err)
 	}
 
 	core.End("")

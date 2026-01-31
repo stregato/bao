@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:bao/src/bindings.dart';
+import 'package:bao/src/vault.dart';
+import 'package:bao/src/db.dart';
 
 class Rows {
   int hnd;
@@ -25,10 +27,18 @@ class Rows {
   }
 }
 
-class BaoQL {
+class Replica {
   int hnd;
-  BaoQL(this.hnd);
-  static BaoQL none = BaoQL(0);
+  
+  static Future<Replica> open(Vault vault, DB db) async {
+    var res = await bindings.acall('bao_replica_open', [vault.hnd, db.hnd]);
+    return Replica._(res.handle);
+  }
+  
+  static Replica none = Replica._(0);
+  
+  // Private constructor for creating instances
+  Replica._(this.hnd);
 
   void close() async {
     bindings.call('bao_replica_cancel', [hnd]).throwIfError();

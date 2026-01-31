@@ -13,16 +13,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ErrNotInitialized = fmt.Errorf("owndata not initialized")
-var ErrNoDriver = fmt.Errorf("no driver found for the provided configuration")
-var ErrInvalidSignature = fmt.Errorf("signature does not match the user id")
-var ErrInvalidSize = fmt.Errorf("provided slice has not enough data")
-var ErrInvalidVersion = fmt.Errorf("version of protocol is not compatible")
-var ErrInvalidChangeFilePath = fmt.Errorf("a change file is not in a valid Woland folder")
-var ErrInvalidFilePath = fmt.Errorf("a file is not in a valid owndata folder")
-var ErrNoExchange = fmt.Errorf("no exchange reachable for the domain")
-var ErrNotAuthorized = fmt.Errorf("user is not authorized in the domain")
-var ErrInvalidId = fmt.Errorf("the id is invalid")
+// Error code constants for semantic error categorization
+const (
+	DbError      = "DbError"
+	FileError    = "FileError"
+	ParseError   = "ParseError"
+	EncodeError  = "EncodeError"
+	AuthError    = "AuthError"
+	AccessDenied = "AccessDenied"
+	NetError     = "NetError"
+	ConfigError  = "ConfigError"
+	TestError    = "TestError"
+	GenericError = "GenericError"
+)
 
 const MaxRecentErrors = 16000
 
@@ -64,21 +67,29 @@ func ErrLike(err error, format string) bool {
 }
 
 func LogError(format string, args ...any) {
-	err := Errorw(format, args...)
+	err := Error(GenericError, format, args...)
 	logrus.Error(stacktraceString(err))
 }
 
 type wrappedError struct {
+	Code  string `json:"code"`  // The error code
+	Msg   string `json:"msg"`   // The error message
 	File  string `json:"file"`  // The file where the error occurred
 	Line  int    `json:"line"`  // The line number where the error occurred
-	Msg   string `json:"msg"`   // The error message
 	Cause error  `json:"cause"` // The underlying cause of the error
 }
 
 func (e *wrappedError) Error() string { return e.Msg }
 func (e *wrappedError) Unwrap() error { return e.Cause }
+func ErrorCode(err error) string {
+	if we, ok := err.(*wrappedError); ok {
+		return we.Code
+	}
+	return ""
+}
 
-func Errorw(format string, args ...any) error {
+
+func Error(code string, format string, args ...any) error {
 	pc, file, line, _ := runtime.Caller(1)
 	fn := path.Base(runtime.FuncForPC(pc).Name())
 	base := filepath.Base(file)
@@ -90,11 +101,17 @@ func Errorw(format string, args ...any) error {
 			args = args[:n-1]
 		}
 	}
+	if cause != nil && code == GenericError {
+		if we, ok := cause.(*wrappedError); ok {
+			code = we.Code
+		}
+	}
 	msg := fmt.Sprintf(format, args...)
 	log := fmt.Sprintf("ERROR [%s] %s:%d - %s", fn, filepath.Base(file), line, msg)
 	logrus.Errorf(log)
 	addRecentLog(log)
 	return &wrappedError{
+		Code:  code,
 		File:  base,
 		Line:  line,
 		Msg:   msg,
@@ -104,9 +121,10 @@ func Errorw(format string, args ...any) error {
 
 func (e *wrappedError) MarshalJSON() ([]byte, error) {
 	type jsonErr struct {
+		Code    string   `json:"code"`
+		Message string   `json:"msg,omitempty"`
 		File    string   `json:"file,omitempty"`
 		Line    int      `json:"line,omitempty"`
-		Message string   `json:"msg"`
 		Cause   *jsonErr `json:"cause,omitempty"`
 	}
 
@@ -117,9 +135,10 @@ func (e *wrappedError) MarshalJSON() ([]byte, error) {
 		}
 		if we, ok := err.(*wrappedError); ok {
 			return &jsonErr{
+				Code:    we.Code,
+				Message: we.Msg,
 				File:    we.File,
 				Line:    we.Line,
-				Message: we.Msg,
 				Cause:   encode(we.Cause),
 			}
 		}
@@ -138,7 +157,7 @@ func stacktraceString(err error) string {
 	walk = func(e error) {
 		switch we := e.(type) {
 		case *wrappedError:
-			fmt.Fprintf(&b, "%s:%d: %s\n\t", we.File, we.Line, we.Msg)
+			fmt.Fprintf(&b, "%s - %s:%d: %s\n\t", we.Code, we.File, we.Line, we.Msg)
 			if we.Cause != nil {
 				walk(we.Cause)
 			}
@@ -163,7 +182,7 @@ func TestErr(t *testing.T, err error, msg string, args ...interface{}) {
 	if err != nil {
 		args = append(args, err)
 		msg = fmt.Sprintf(msg, args...)
-		err = Errorw(msg, err)
+		err = Error(TestError, msg, err)
 		logrus.Fatal(stacktraceString(err))
 		t.FailNow()
 	}

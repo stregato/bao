@@ -71,7 +71,7 @@ func (r Result) RowsAffected() (int64, error) {
 func OpenEngine(driverName, dataSourceName string) (*Engine, error) {
 	ctor := js.Global().Get("Worker")
 	if !ctor.Truthy() {
-		return nil, core.Errorw("Worker API not available")
+		return nil, core.Errorw(core.GenericError, "Worker API not available")
 	}
 	w := ctor.New("./db_worker.js")
 
@@ -105,7 +105,7 @@ func OpenEngine(driverName, dataSourceName string) (*Engine, error) {
 
 	if _, err := e.call(context.Background(), "open", map[string]any{"path": dataSourceName}); err != nil {
 		e.dispose()
-		return nil, core.Errorw("cannot open JS DB: %s", err.Error())
+		return nil, core.Errorw(core.DbError, "cannot open JS DB: %s", err.Error())
 	}
 	return e, nil
 }

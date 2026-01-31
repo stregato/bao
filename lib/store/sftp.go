@@ -52,7 +52,7 @@ func OpenSFTP(id string, c SFTPConfig) (Store, error) {
 	if c.PrivateKey != "" {
 		pkey, err := base64.StdEncoding.DecodeString(c.PrivateKey)
 		if err != nil {
-			return nil, core.Errorw("private key is invalid", err)
+			return nil, core.Error(core.GenericError, "private key is invalid", err)
 		}
 
 		signer, err := ssh.ParsePrivateKey(pkey)
@@ -98,7 +98,7 @@ func (s *SFTP) Read(name string, rang *Range, dest io.Writer, progress chan int6
 		return err
 	}
 	if err != nil {
-		return core.Errorw("cannot open file on sftp server %v:%v", s, err)
+		return core.Error(core.FileError, "cannot open file on sftp server %v:%v", s, err)
 	}
 
 	if rang == nil {
@@ -124,7 +124,7 @@ func (s *SFTP) Read(name string, rang *Range, dest io.Writer, progress chan int6
 		}
 	}
 	if err != io.EOF && err != nil {
-		return core.Errorw("cannot read from %s/%s:%v", s, name, err)
+		return core.Error(core.GenericError, "cannot read from %s/%s:%v", s, name, err)
 	}
 
 	return nil
@@ -140,12 +140,12 @@ func (s *SFTP) Write(name string, source io.ReadSeeker, progress chan int64) err
 		f, err = s.c.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC)
 	}
 	if err != nil {
-		return core.Errorw("cannot create SFTP file '%s'", name, err)
+		return core.Error(core.FileError, "cannot create SFTP file '%s'", name, err)
 	}
 
 	_, err = io.Copy(f, source)
 	if err != nil {
-		return core.Errorw("cannot write SFTP file '%s'", name, err)
+		return core.Error(core.FileError, "cannot write SFTP file '%s'", name, err)
 	}
 
 	return nil
@@ -185,7 +185,7 @@ func (s *SFTP) Delete(name string) error {
 	n := path.Join(s.base, name)
 	stat, err := s.c.Stat(n)
 	if err != nil {
-		return core.Errorw("cannot stat %s in Delete", n, err)
+		return core.Error(core.DbError, "cannot stat %s in Delete", n, err)
 	}
 
 	if stat.IsDir() {
@@ -199,7 +199,7 @@ func (s *SFTP) Delete(name string) error {
 	}
 	err = s.c.Remove(n)
 	if err != nil {
-		return core.Errorw("cannot delete %s in Delete", n, err)
+		return core.Error(core.DbError, "cannot delete %s in Delete", n, err)
 	}
 	return nil
 }

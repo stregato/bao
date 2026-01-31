@@ -10,7 +10,7 @@ func (db *DB) SetSetting(id, s string, i int64, f float64, b []byte) error {
 		"valueAsString": s, "valueAsInt": i,
 		"valueAsReal": f, "valueAsBlob": b})
 	if err != nil {
-		return core.Errorw("cannot set setting %s", id, err)
+		return core.Error(core.DbError, "cannot set setting %s", id, err)
 	}
 	db.settingCacheMu.Lock()
 	db.settingCache[id] = struct {
@@ -40,7 +40,7 @@ func (db *DB) GetSetting(id string) (s string, i int64, f float64, b []byte, err
 		return "", 0, 0, nil, ErrNoRows
 	}
 	if err != nil {
-		return "", 0, 0, nil, core.Errorw("cannot get setting %s", id, err)
+		return "", 0, 0, nil, core.Error(core.DbError, "cannot get setting %s", id, err)
 	}
 
 	db.settingCache[id] = struct {

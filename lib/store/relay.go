@@ -1,3 +1,5 @@
+//go:build !js
+
 package store
 
 import (
@@ -40,7 +42,7 @@ func OpenRelay(id string, c RelayConfig) (Store, error) {
 	timestamp := core.Now().UTC().Format(time.RFC3339)
 	signature, err := security.Sign(c.PrivateID, []byte(timestamp))
 	if err != nil {
-		return nil, core.Errorw("cannot sign relay request: %v", err)
+		return nil, core.Error(core.GenericError, "cannot sign relay request: %v", err)
 	}
 
 	req := relayRequest{
@@ -51,38 +53,38 @@ func OpenRelay(id string, c RelayConfig) (Store, error) {
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, core.Errorw("cannot marshal relay request: %v", err)
+		return nil, core.Error(core.ParseError, "cannot marshal relay request: %v", err)
 	}
 
 	resp, err := http.Post(c.URL, "application/json", core.NewBytesReader(body))
 	if err != nil {
-		return nil, core.Errorw("cannot call relay service: %v", err)
+		return nil, core.Error(core.GenericError, "cannot call relay service: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, core.Errorw("relay service returned status %d", resp.StatusCode)
+		return nil, core.Error(core.GenericError, "relay service returned status %d", resp.StatusCode)
 	}
 
 	encryptedConfig, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, core.Errorw("cannot read relay service response: %v", err)
+		return nil, core.Error(core.GenericError, "cannot read relay service response: %v", err)
 	}
 
 	decryptedConfigBytes, err := security.EcDecrypt(c.PrivateID, encryptedConfig)
 	if err != nil {
-		return nil, core.Errorw("cannot decrypt relay service response: %v", err)
+		return nil, core.Error(core.EncodeError, "cannot decrypt relay service response: %v", err)
 	}
 
 	var storeConfig StoreConfig
 	err = json.Unmarshal(decryptedConfigBytes, &storeConfig)
 	if err != nil {
-		return nil, core.Errorw("cannot unmarshal store config from relay response: %v", err)
+		return nil, core.Error(core.ParseError, "cannot unmarshal store config from relay response: %v", err)
 	}
 
 	innerStore, err := Open(storeConfig)
 	if err != nil {
-		return nil, core.Errorw("cannot open inner store from relay config: %v", err)
+		return nil, core.Error(core.ConfigError, "cannot open inner store from relay config: %v", err)
 	}
 
 	return &Relay{inner: innerStore}, nil

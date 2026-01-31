@@ -101,9 +101,9 @@ func PublicIDFromBytes(data []byte) (PublicID, error) {
 }
 
 func (privateID PrivateID) PublicID() (PublicID, error) {
-	cryptKey, privateSign, err := DecodeID(string(privateID))
+	cryptKey, privateSign, err := privateID.Decode()
 	if core.IsErr(err, "cannot decode private ID: %v") {
-		panic(err)
+		return "", err
 	}
 
 	privateCrypt := eciesgo.NewPrivateKeyFromBytes(cryptKey)
@@ -135,6 +135,17 @@ func (publicID PublicID) Bytes() []byte {
 	}
 	return data
 }
+func (publicID PublicID) Decode() (cryptKey []byte, signKey []byte, err error) {
+	data, err := base64.URLEncoding.DecodeString(publicID.String())
+	if core.IsErr(err, "cannot decode base64: %v") {
+		return nil, nil, err
+	}
+	if len(data) != secp256k1PublicKeySize+ed25519.PublicKeySize {
+		core.IsErr(ErrInvalidID, "invalid public ID %s with length %d", publicID, len(data))
+		return nil, nil, ErrInvalidID
+	}
+	return data[:secp256k1PublicKeySize], data[secp256k1PublicKeySize:], nil
+}
 
 func (privateID PrivateID) Bytes() []byte {
 	data, err := base64.URLEncoding.DecodeString(privateID.String())
@@ -144,21 +155,14 @@ func (privateID PrivateID) Bytes() []byte {
 	return data
 }
 
-func DecodeID(id string) (cryptKey []byte, signKey []byte, err error) {
-	data, err := base64.URLEncoding.DecodeString(id)
+func (privateID PrivateID) Decode() (cryptKey []byte, signKey []byte, err error) {
+	data, err := base64.URLEncoding.DecodeString(privateID.String())
 	if core.IsErr(err, "cannot decode base64: %v") {
 		return nil, nil, err
 	}
-
-	var split int
-	if len(data) == secp256k1PrivateKeySize+ed25519.PrivateKeySize-ed25519.PublicKeySize {
-		split = secp256k1PrivateKeySize
-	} else if len(data) == secp256k1PublicKeySize+ed25519.PublicKeySize {
-		split = secp256k1PublicKeySize
-	} else {
-		core.IsErr(ErrInvalidID, "invalid ID %s with length %d: %v", id, len(data))
+	if len(data) != secp256k1PrivateKeySize+ed25519.PrivateKeySize-ed25519.PublicKeySize {
+		core.IsErr(ErrInvalidID, "invalid private ID %s with length %d", privateID, len(data))
 		return nil, nil, ErrInvalidID
 	}
-
-	return data[:split], data[split:], nil
+	return data[:secp256k1PrivateKeySize], data[secp256k1PrivateKeySize:], nil
 }

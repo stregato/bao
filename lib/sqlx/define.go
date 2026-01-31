@@ -16,14 +16,14 @@ func (db *DB) ensureVersionsTable() (map[float64]bool, error) {
 	if err == sql.ErrNoRows {
 		_, err = db.Engine.Exec(`CREATE TABLE versions (version REAL PRIMARY KEY)`)
 		if err != nil {
-			return nil, core.Errorw("cannot create versions table", err)
+			return nil, core.Error(core.DbError, "cannot create versions table", err)
 		}
 	} else if err != nil && err != sql.ErrNoRows {
-		return nil, core.Errorw("cannot check versions table", err)
+		return nil, core.Error(core.DbError, "cannot check versions table", err)
 	}
 	rows, err := db.Engine.Query(`SELECT version FROM versions`)
 	if err != nil {
-		return nil, core.Errorw("cannot query versions table", err)
+		return nil, core.Error(core.DbError, "cannot query versions table", err)
 	}
 	defer rows.Close()
 	versions := make(map[float64]bool)
@@ -119,7 +119,7 @@ func (db *DB) Define(ddl string) error {
 func (db *DB) initStatement(query string, line int) error {
 	_, err := db.Engine.Exec(query)
 	if err != nil {
-		return core.Errorw("cannot execute SQL Init stmt (line %d) '%s'\n", line, query, err)
+		return core.Error(core.DbError, "cannot execute SQL Init stmt (line %d) '%s'\n", line, query, err)
 	}
 	firstLine := strings.Split(query, "\n")[0]
 	core.Trace("SQL Init (line %d) executed successfully: %s\n", line, firstLine)
@@ -174,7 +174,7 @@ func (db *DB) getQuery(sql string, args Args) (string, error) {
 		core.Trace("SQL query retrieved directly")
 		return sql, nil
 	} else {
-		return "", core.Errorw("query not found '%s'", sql)
+		return "", core.Error(core.DbError, "query not found '%s'", sql)
 	}
 }
 
@@ -189,7 +189,7 @@ func (db *DB) getStatement(sql string, args Args) (*Stmt, error) {
 
 	sql, err := db.getQuery(sql, args)
 	if err != nil {
-		return nil, core.Errorw("cannot get SQL statement '%s'", sql, err)
+		return nil, core.Error(core.DbError, "cannot get SQL statement '%s'", sql, err)
 	}
 
 	if v, ok := db.stmts[sql]; ok {
@@ -199,7 +199,7 @@ func (db *DB) getStatement(sql string, args Args) (*Stmt, error) {
 
 	stmt, err := db.Engine.Prepare(sql)
 	if err != nil {
-		return nil, core.Errorw("cannot compile SQL statement for key '%s'", sql, err)
+		return nil, core.Error(core.DbError, "cannot compile SQL statement for key '%s'", sql, err)
 	}
 	db.stmts[sql] = stmt
 	core.Trace("SQL statement compiled: '%s'\n", sql)

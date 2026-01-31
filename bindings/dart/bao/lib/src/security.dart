@@ -54,9 +54,9 @@ Uint8List aesDecryptFromBase64(
 	return aesDecrypt(key, nonce, Uint8List.fromList(base64Url.decode(cipherBase64)));
 }
 
-/// Generates a new key pair and returns a map with publicID and privateID strings.
+/// Generates a new key pair and returns a tuple of (PublicID, PrivateID)
 (PublicID, PrivateID) newKeyPair() {
   var m = Map<String, String>.from(
 			bindings.call('bao_security_newKeyPair', []).map);
-  return (m['publicID']!, m['privateID']!);
+  return (PublicID(m['publicID']!), PrivateID(m['privateID']!));
 }

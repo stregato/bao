@@ -4,11 +4,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"time"
-
-	"github.com/stregato/bao/lib/core"
-	"gopkg.in/yaml.v2"
 )
 
 type Source struct {
@@ -77,42 +73,4 @@ type Store interface {
 	//	LastChange(dir string) (time.Time, error)
 
 	Describe() Description
-}
-
-func LoadTestURLs() (urls map[string]StoreConfig) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		panic(core.Errorw("cannot get user home dir", err))
-	}
-	filename := path.Join(homeDir, "credentials.yaml")
-	_, err = os.Stat(filename)
-	if err != nil {
-		filename = "../credentials.yaml"
-	}
-
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		panic(core.Errorw("cannot read file %s", filename, err))
-	}
-
-	err = yaml.Unmarshal(data, &urls)
-	if err != nil {
-		panic(core.Errorw("cannot parse file %s", filename, err))
-	}
-	return urls
-}
-
-func NewTestStore(id string) Store {
-
-	c := LoadTestConfig(nil, id)
-	store, err := Open(c)
-	if err != nil {
-		panic(core.Errorw("cannot open syestore %s", id, err))
-	}
-	ls, _ := store.ReadDir("", Filter{})
-	for _, l := range ls {
-		store.Delete(l.Name())
-	}
-
-	return store
 }

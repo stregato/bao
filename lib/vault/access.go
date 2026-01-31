@@ -23,16 +23,16 @@ func (v *Vault) SyncAccess(options IOOption, changes ...AccessChange) error {
 	var err error
 	cs, err := v.convertToChanges(changes)
 	if err != nil {
-		return core.Errorw("cannot convert access changes for domain %s", v.Realm, err)
+		return core.Error(core.AuthError, "cannot convert access changes for domain %s", v.Realm, err)
 	}
 	for _, c := range cs {
 		bc, err := marshalChange(c)
 		if err != nil {
-			return core.Errorw("cannot match block changes for domain %s", v.Realm, err)
+			return core.Error(core.GenericError, "cannot match block changes for domain %s", v.Realm, err)
 		}
 		err = v.stageBlockChange(bc)
 		if err != nil {
-			return core.Errorw("cannot stage block change for domain %s", v.Realm, err)
+			return core.Error(core.GenericError, "cannot stage block change for domain %s", v.Realm, err)
 		}
 		core.Info("staged %s in %s", c, v.ID)
 	}
@@ -45,7 +45,7 @@ func (v *Vault) SyncAccess(options IOOption, changes ...AccessChange) error {
 		// do nothing, will be synced later
 	default:
 		if err := v.syncBlockChain(); err != nil {
-			return core.Errorw("cannot synchronize blockchain for access changes", err)
+			return core.Error(core.AuthError, "cannot synchronize blockchain for access changes", err)
 		}
 	}
 
@@ -58,7 +58,7 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 
 	current, err := v.GetAccesses()
 	if err != nil {
-		return nil, core.Errorw("cannot get existing access rights: %v", err)
+		return nil, core.Error(core.DbError, "cannot get existing access rights: %v", err)
 	}
 	needNewKey := len(current) == 0
 
@@ -69,12 +69,12 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 		}
 	}
 	if !adminRight {
-		return nil, core.Errorw("only the vault creator or an admin can change the access rights")
+		return nil, core.Error(core.AuthError, "only the vault creator or an admin can change the access rights")
 	}
 
 	keysForScope, err := v.getKeysForScope()
 	if err != nil {
-		return nil, core.Errorw("cannot get keys: %v", err)
+		return nil, core.Error(core.DbError, "cannot get keys: %v", err)
 	}
 
 	var delta []Change
@@ -92,7 +92,7 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 			for keyId, key := range keysForScope {
 				encKey, encErr := security.EcEncrypt(change.UserId, key)
 				if encErr != nil {
-					return nil, core.Errorw("cannot encrypt key for user %s: %v", change.UserId, encErr)
+					return nil, core.Error(core.EncodeError, "cannot encrypt key for user %s: %v", change.UserId, encErr)
 				}
 				activeKeySet.Keys[keyId] = encKey
 			}
@@ -124,7 +124,7 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 		if len(recipients) > 0 {
 			addKey, err := v.createAddKey(recipients, keyId, key)
 			if err != nil {
-				return nil, core.Errorw("cannot create add key for domain %s", v.Realm, err)
+				return nil, core.Error(core.GenericError, "cannot create add key for domain %s", v.Realm, err)
 			}
 			delta = append(delta, &addKey)
 			keysForScope = map[uint64]security.AESKey{keyId: key}
@@ -147,7 +147,7 @@ func (v *Vault) createAddKey(ids []security.PublicID, keyId uint64, key security
 	for _, id := range ids {
 		ekey, err := security.EcEncrypt(id, key)
 		if err != nil {
-			return AddKey{}, core.Errorw("cannot encrypt key for user %s in domain %s", id, v.Realm, err)
+			return AddKey{}, core.Error(core.EncodeError, "cannot encrypt key for user %s in domain %s", id, v.Realm, err)
 		}
 		addKey.EncryptedKeys[id] = ekey
 	}
@@ -179,7 +179,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		return accesses, nil
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot get users for group %s", v.Realm, err)
+		return nil, core.Error(core.DbError, "cannot get users for group %s", v.Realm, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -187,7 +187,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		var access Access
 		err = rows.Scan(&id, &access)
 		if err != nil {
-			return nil, core.Errorw("cannot scan user %s for group %s", id, v.Realm, err)
+			return nil, core.Error(core.GenericError, "cannot scan user %s for group %s", id, v.Realm, err)
 		}
 		accesses[id] = access
 	}

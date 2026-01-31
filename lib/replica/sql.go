@@ -35,7 +35,7 @@ func Open(vault *vault.Vault, db *sqlx.DB) (*Replica, error) {
 
 	lastId, err := readLastTransactionsId(vault.DB, vault.String())
 	if err != nil {
-		return nil, core.Errorw("cannot read last transaction id", err)
+		return nil, core.Error(core.GenericError, "cannot read last transaction id", err)
 	}
 
 	core.End("")
@@ -51,7 +51,7 @@ func readLastTransactionsId(db *sqlx.DB, vaultID string) (lastId int64, err erro
 		return 0, nil
 	}
 	if err != nil {
-		return 0, core.Errorw("cannot read last transaction id", err)
+		return 0, core.Error(core.GenericError, "cannot read last transaction id", err)
 	}
 	core.End("transaction id %d", lastId)
 	return lastId, nil

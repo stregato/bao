@@ -22,17 +22,17 @@ func Create(realm Realm, userPrivateID security.PrivateID, store store.Store, db
 	core.Start("creating vault for url %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
-		return nil, core.Errorw("Cannot define SQLite db in %s", db.DbPath, err)
+		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", db.DbPath, err)
 	}
 
 	userID, err := userPrivateID.PublicID()
 	if err != nil {
-		return nil, core.Errorw("invalid private while creating vault for url %s", store.ID(), err)
+		return nil, core.Error(core.GenericError, "invalid private while creating vault for url %s", store.ID(), err)
 	}
 
 	err = Wipe(store, realm.String())
 	if err != nil {
-		return nil, core.Errorw("cannot wipe data in store %s", store.ID(), err)
+		return nil, core.Error(core.GenericError, "cannot wipe data in store %s", store.ID(), err)
 	}
 	userIDHash := core.Int64Hash(userID.Bytes())
 	ioThrottle := core.DefaultIfZero(config.IoThrottle, 10) // Default to 10 concurrent I/O operations
@@ -56,15 +56,15 @@ func Create(realm Realm, userPrivateID security.PrivateID, store store.Store, db
 
 	bc, err := marshalChange(&config)
 	if err != nil {
-		return nil, core.Errorw("cannot marshal config change for vault %s", id, err)
+		return nil, core.Error(core.ParseError, "cannot marshal config change for vault %s", id, err)
 	}
 	err = s.stageBlockChange(bc)
 	if err != nil {
-		return nil, core.Errorw("cannot stage config change for vault %s", id, err)
+		return nil, core.Error(core.ConfigError, "cannot stage config change for vault %s", id, err)
 	}
 	err = s.SyncAccess(0, AccessChange{userID, ReadWriteAdmin})
 	if err != nil {
-		return nil, core.Errorw("cannot set access for vault %s", id, err)
+		return nil, core.Error(core.DbError, "cannot set access for vault %s", id, err)
 	}
 
 	go s.startHousekeeping()
@@ -84,11 +84,11 @@ func Wipe(s store.Store, dir string) error {
 		return nil
 	}
 	if err != nil {
-		return core.Errorw("cannot read store %s", s.ID(), err)
+		return core.Error(core.GenericError, "cannot read store %s", s.ID(), err)
 	}
 	for _, f := range ls {
 		if err := s.Delete(path.Join(dir, f.Name())); err != nil {
-			return core.Errorw("cannot delete file %s from store %s", f.Name(), s.ID(), err)
+			return core.Error(core.DbError, "cannot delete file %s from store %s", f.Name(), s.ID(), err)
 		}
 	}
 	logrus.Infof("Successfully wiped data from store %s", s.ID())

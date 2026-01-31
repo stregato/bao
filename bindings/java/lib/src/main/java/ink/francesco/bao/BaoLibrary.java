@@ -16,8 +16,10 @@ public interface BaoLibrary extends Library {
     Result bao_snapshot();
 
     Result bao_security_newPrivateID();
+    Result bao_security_newKeyPair();
     Result bao_security_publicID(String privateID);
-    Result bao_security_decodeID(String encoded);
+    Result bao_security_decodePrivateID(String encoded);
+    Result bao_security_decodePublicID(String encoded);
 
     Result bao_security_ecEncrypt(String pub, Data data);
     Result bao_security_ecDecrypt(String priv, Data data);
@@ -37,11 +39,11 @@ public interface BaoLibrary extends Library {
     Result bao_store_stat(long storeH, String path);
     Result bao_store_delete(long storeH, String path);
 
-    Result bao_vault_create(String identity, long dbH, long storeH, String settingsJson);
-    Result bao_vault_open(String identity, long dbH, long storeH, String settingsJson, String author);
+    Result bao_vault_create(String realm, String identity, long storeH, long dbH, String settingsJson);
+    Result bao_vault_open(String realm, String identity, String author, long storeH, long dbH);
     Result bao_vault_close(long baoH);
     Result bao_vault_syncAccess(long baoH, long options, String changesJson);
-    Result bao_vault_getAccess(long baoH, String groupName);
+    Result bao_vault_getAccess(long baoH, String userId);
     Result bao_vault_getGroups(long baoH, String userId);
     Result bao_listGroups(long baoH);
     Result bao_vault_waitFiles(long baoH, String fileIdsJson);
@@ -52,11 +54,11 @@ public interface BaoLibrary extends Library {
     Result bao_vault_readDir(long baoH, String dir, long since, long fromId, int limit);
     Result bao_vault_stat(long baoH, String name);
     Result bao_vault_read(long baoH, String name, String dest, long options);
-    Result bao_vault_write(long baoH, String dest, String src, String group, Data attrs, long options);
+    Result bao_vault_write(long baoH, String dest, String src, Data attrs, long options);
     Result bao_vault_delete(long baoH, String name, long options);
     Result bao_vault_allocatedSize(long baoH);
 
-    Result bao_replica_open(long baoH, String groupName, int dbHandle);
+    Result bao_replica_open(long baoH, int dbHandle);
     Result bao_replica_exec(long layerH, String query, String args);
     Result bao_replica_query(long layerH, String query, String args);
     Result bao_replica_fetch(long rowsH, String dest, String args, int limit);

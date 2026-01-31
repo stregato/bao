@@ -15,40 +15,51 @@ def set_bao_log_level(level: str):
     return consume(lib.bao_setLogLevel(e8(level)))
 
 
-PrivateID = str
-PublicID = str
 Realm = str
+
+
+class PrivateID(str):
+    """Private ID that can decode its cryptographic keys."""
+    
+    def __new__(cls, content: str):
+        return str.__new__(cls, content)
+    
+    def decode(self) -> Dict[str, Any]:
+        """Decode the private ID to extract cryptKey and signKey."""
+        return consume(lib.bao_security_decodePrivateID(e8(str(self))))
+
+
+class PublicID(str):
+    """Public ID that can decode its cryptographic keys."""
+    
+    def __new__(cls, content: str):
+        return str.__new__(cls, content)
+    
+    def decode(self) -> Dict[str, Any]:
+        """Decode the public ID to extract cryptKey and signKey."""
+        return consume(lib.bao_security_decodePublicID(e8(str(self))))
+
+
 KeyPair = Tuple[PublicID, PrivateID]
 
 
 def newPrivateID() -> PrivateID:
-    return consume(lib.bao_security_newPrivateID())
+    return PrivateID(consume(lib.bao_security_newPrivateID()))
 
 def publicID(private_id: PrivateID) -> PublicID:
-    return consume(lib.bao_security_publicID(e8(private_id)))
+    return PublicID(consume(lib.bao_security_publicID(e8(str(private_id)))))
 
 def newKeyPair() -> KeyPair:
     res = consume(lib.bao_security_newKeyPair()) or {}
-    pub = str(res.get("publicID", ""))
-    priv = str(res.get("privateID", ""))
+    pub = PublicID(str(res.get("publicID", "")))
+    priv = PrivateID(str(res.get("privateID", "")))
     return (pub, priv)
 
 # Backward compatible alias for older callers
 newKeyPairMust = newKeyPair
 
 def key_pair_to_dict(pair: KeyPair) -> Dict[str, str]:
-    return {"publicID": pair[0], "privateID": pair[1]}
-
-def decodeID(id_str: str) -> Dict[str, Any]:
-    '''
-    Docstring for decodeID
-    
-    :param id_str: Description
-    :type id_str: str
-    :return: Description
-    :rtype: Dict[str, Any]
-    '''
-    return consume(lib.bao_security_decodeID(e8(id_str)))
+    return {"publicID": str(pair[0]), "privateID": str(pair[1])}
 
 class Access:
     none = 0
@@ -345,6 +356,10 @@ class Vault:
     async_operation = 1 # write/read operations are async
     scheduled_operation = 2 # write/read operations are scheduled for a background time
     
+    users = Realm("users")
+    home = Realm("home")
+    all = Realm("all")
+    
     def __init__(self):
         self.hnd: int = 0
         self.id: str = ""
@@ -370,14 +385,14 @@ class Vault:
         return s
 
     @staticmethod
-    def create(realm: Realm, identity: PrivateID, db: DB, store: Store, config: Dict[str, Any] = None) -> "Vault":
+    def create(realm: Realm, identity: PrivateID, store: Store, db: DB, config: Dict[str, Any] = None) -> "Vault":
         config = config or {}
         r = lib.bao_vault_create(e8(realm), e8(identity), store.hnd, db.hnd, j8(config))
         return Vault._from_result(r)
 
     @staticmethod
-    def open(realm: Realm, identity: PrivateID, db: DB, store: Store, config: Dict[str, Any], author: PublicID) -> "Vault":
-        r = lib.bao_vault_open(e8(realm), e8(identity), db.hnd, store.hnd, j8(config), e8(author))
+    def open(realm: Realm, identity: PrivateID, author: PublicID, store: Store, db: DB) -> "Vault":
+        r = lib.bao_vault_open(e8(realm), e8(identity), e8(author), store.hnd, db.hnd)
         return Vault._from_result(r)
 
     def close(self):
@@ -451,6 +466,10 @@ class Vault:
 
     def delete(self, name: str, options: int = 0):
         return consume(lib.bao_vault_delete(self.hnd, e8(name), options))
+
+    def versions(self, name: str) -> List[File]:
+        payload = consume(lib.bao_vault_versions(self.hnd, e8(name)))
+        return [File.from_dict(item) for item in (payload or [])]
 
     def allocated_size(self) -> int:
         r = lib.bao_vault_allocatedSize(self.hnd)

@@ -21,7 +21,7 @@ func (v *Vault) WaitFiles(ids ...FileId) error {
 	if len(ids) == 0 {
 		ids, err = v.queryFileIdsByFlags(PendingRead | PendingWrite)
 		if err != nil {
-			return core.Errorw("cannot query files with PendingRead or PendingWrite flags for store ID %s", v.ID, err)
+			return core.Error(core.DbError, "cannot query files with PendingRead or PendingWrite flags for store ID %s", v.ID, err)
 		}
 	}
 	// ids already populated (either provided by caller or auto-collected above)
@@ -40,7 +40,7 @@ func (v *Vault) WaitFiles(ids ...FileId) error {
 func (v *Vault) waitFiles() error {
 	ids, err := v.queryFileIdsByFlags(PendingRead | PendingWrite)
 	if err != nil {
-		return core.Errorw("cannot query files with PendingRead or PendingWrite flags for store ID %s", v.ID, err)
+		return core.Error(core.DbError, "cannot query files with PendingRead or PendingWrite flags for store ID %s", v.ID, err)
 	}
 
 	var wg sync.WaitGroup
@@ -64,24 +64,24 @@ func (v *Vault) waitFile(fileId FileId, wg *sync.WaitGroup) error {
 	file, found, err := v.queryFileById(fileId)
 	if err != nil {
 		// If we cannot get the file, log the error and return
-		return core.Errorw("cannot get file flags for file ID %d", fileId, err)
+		return core.Error(core.DbError, "cannot get file flags for file ID %d", fileId, err)
 	}
 	if !found {
-		return core.Errorw("file ID %d does not exist", fileId, sql.ErrNoRows)
+		return core.Error(core.FileError, "file ID %d does not exist", fileId, sql.ErrNoRows)
 	}
 	switch {
 	case file.Flags&PendingRead != 0:
 		// If the file is marked for reading, read it
 		err = v.readFile(file, nil)
 		if err != nil {
-			return core.Errorw("cannot read file ID %d", fileId, err)
+			return core.Error(core.FileError, "cannot read file ID %d", fileId, err)
 		}
 		core.Info("File ID %d is marked for read, successfully read", fileId)
 	case file.Flags&PendingWrite != 0:
 		// If the file is marked for writing, write it
 		err = v.writeFile(file, nil)
 		if err != nil {
-			return core.Errorw("cannot write file ID %d", fileId, err)
+			return core.Error(core.FileError, "cannot write file ID %d", fileId, err)
 		}
 		core.Info("File ID %d is marked for write, successfully written", fileId)
 	default:

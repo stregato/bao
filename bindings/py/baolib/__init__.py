@@ -12,7 +12,6 @@ from .bao import (
     newKeyPairMust,
     key_pair_to_dict,
     publicID,
-    decodeID,
     set_bao_log_level,
     local_store,
     s3_store,
@@ -20,6 +19,7 @@ from .bao import (
     webdav_store,
     sftp_store,
 )
+from .error import WrappedError, has_code
 
 __all__ = [
     "Access",
@@ -35,11 +35,12 @@ __all__ = [
     "newKeyPairMust",
     "key_pair_to_dict",
     "publicID",
-    "decodeID",
     "set_bao_log_level",
     "local_store",
     "s3_store",
     "azure_store",
     "webdav_store",
     "sftp_store",
+    "WrappedError",
+    "has_code",
 ]

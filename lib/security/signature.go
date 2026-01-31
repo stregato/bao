@@ -28,7 +28,7 @@ type Public struct {
 }
 
 func Sign(privateID PrivateID, data []byte) ([]byte, error) {
-	_, signKey, err := DecodeID(string(privateID))
+	_, signKey, err := privateID.Decode()
 	if core.IsErr(err, "cannot decode keys: %v") {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func Sign(privateID PrivateID, data []byte) ([]byte, error) {
 }
 
 func Verify(publicID PublicID, data []byte, sig []byte) bool {
-	_, signKey, err := DecodeID(string(publicID))
+	_, signKey, err := publicID.Decode()
 	if core.IsErr(err, "cannot decode keys: %v") {
 		return false
 	}

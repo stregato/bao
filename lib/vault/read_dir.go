@@ -19,7 +19,7 @@ func (v *Vault) ReadDir(dir string, since time.Time, afterId int64, limit int) (
 	if now.Sub(v.lastSyncAt) >= v.Config.SyncCooldown {
 		_, err := v.Sync()
 		if err != nil {
-			return nil, core.Errorw("cannot sync vault before reading directory %s", dir, err)
+			return nil, core.Error(core.FileError, "cannot sync vault before reading directory %s", dir, err)
 		}
 	}
 
@@ -30,7 +30,7 @@ func (v *Vault) ReadDir(dir string, since time.Time, afterId int64, limit int) (
 	rows, err := v.DB.Query("GET_FILES_IN_DIR", sqlx.Args{"vault": v.ID, "dir": dir,
 		"since": modTimeSince, "afterId": afterId, "limit": limit})
 	if err != nil {
-		return nil, core.Errorw("cannot get files from DB for directory %s", dir, err)
+		return nil, core.Error(core.DbError, "cannot get files from DB for directory %s", dir, err)
 	}
 	defer rows.Close()
 	for rows.Next() {

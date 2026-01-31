@@ -2,9 +2,6 @@ import 'dart:typed_data';
 
 import 'package:bao/src/fileinfo.dart';
 import 'package:bao/src/bindings.dart';
-import 'message.dart';
-import 'mailbox.dart';
-import 'bao_ql.dart';
 import 'db.dart';
 import 'identity.dart';
 import 'loader.dart';
@@ -13,8 +10,9 @@ import 'store.dart';
 typedef Access = int;
 const int accessRead = 1;
 const int accessWrite = 2;
-const int accessReadWrite = accessRead | accessWrite;
 const int accessAdmin = 4;
+const int accessReadWrite = accessRead | accessWrite;
+const int accessAdminReadWrite = accessAdmin | accessReadWrite;
 
 typedef Accesses = Map<PublicID, Access>;
 
@@ -25,14 +23,14 @@ const int asyncOperation = 1; // Perform the operation asynchronously
 const int scheduledOperation = 2; // Schedule the operation for later
 
 class AccessChange {
-  PublicID userId = '';
+  PublicID userId = PublicID();
   Access access = 0;
 
   AccessChange(this.userId, this.access);
 
   Map<String, dynamic> toJson() {
     return {
-      'userId': userId,
+      'userId': userId.toString(),
       'access': access,
     };
   }
@@ -48,11 +46,11 @@ const Realm all = 'all';
 class Vault {
   int hnd = 0;
   String id = '';
-  PrivateID userId = '';
-  PublicID userPublicId = '';
+  late PrivateID userId;
+  late PublicID userPublicId;
+  late PublicID author;
   Realm realm = '';
   String url = '';
-  PublicID author = '';
   Map<String, dynamic> config = {};
   StoreConfig storeConfig = const StoreConfig();
 
@@ -63,8 +61,8 @@ class Vault {
     s.hnd = res.handle;
     var m = res.map;
     s.id = m['id'] ?? '';
-    s.userId = m['userId'] ?? '';
-    s.userPublicId = m['userPublicId'] ?? '';
+    s.userId = PrivateID(m['userId']);
+    s.userPublicId = PublicID(m['userPublicId']);
     if (m['storeConfig'] != null && m['storeConfig'] is Map) {
       final rawManifest = m['storeConfig'] as Map;
       s.storeConfig = StoreConfig.fromJson(Map<String, dynamic>.from(
@@ -83,21 +81,19 @@ class Vault {
   /// The settings parameter is a map of configuration options (see Go vault.Config).
   /// Returns a tuple containing the created Bao and an error message if any.
   static Future<Vault> create(
-      Realm realm, PrivateID identity, DB db, Store store,
+      Realm realm, PrivateID identity, Store store, DB db,
       {Map<String, dynamic> settings = const {}}) async {
     var res = await bindings.acall(
         'bao_vault_create', [realm, identity, store.hnd, db.hnd, settings]);
     return fromResult(res);
   }
 
-  /// Opens an existing vault with the given identity, store configuration, and author.
-  /// The options parameter can be used to specify additional options for the vault.
-  /// Returns a tuple containing the opened Bao and an error message if any.
+  /// Opens an existing vault with the given identity and author.
+  /// Returns the opened vault or throws if opening fails.
   static Future<Vault> open(
-      Realm realm, PrivateID identity, DB db, Store store, PublicID author,
-      {Map<String, dynamic> config = const {}}) async {
+      Realm realm, PrivateID identity, PublicID author, Store store, DB db) async {
     var res = await bindings.acall(
-        'bao_vault_open', [realm, identity, db.hnd, store.hnd, config, author]);
+        'bao_vault_open', [realm, identity, author, store.hnd, db.hnd]);
     return fromResult(res);
   }
 
@@ -123,7 +119,7 @@ class Vault {
   /// Retrieves the access permissions for the realm.
   Future<Accesses> getAccesses() async {
     var res = await bindings.acall('bao_vault_getAccesses', [hnd]);
-    return res.map.map((k, v) => MapEntry<String, int>(k, v));
+    return res.map.map((k, v) => MapEntry<PublicID, int>(PublicID(k), v));
   }
 
   Future<Access> getAccess(PublicID userId) async {
@@ -167,7 +163,7 @@ class Vault {
   /// The [author] parameter is the PublicID of the author requesting the attributes.
   Future<Map<PublicID, String>> getAttributes(PublicID author) async {
     var res = await bindings.acall('bao_vault_getAttributes', [hnd, author]);
-    return res.map.map((k, v) => MapEntry<PublicID, String>(k, v));
+    return res.map.map((k, v) => MapEntry<PublicID, String>(PublicID(k), v));
   }
 
   /// Reads the directory contents of the vault.
@@ -217,35 +213,10 @@ class Vault {
     res.throwIfError();
   }
 
-  /// Creates a new SQL layer for the specified database.
-  Future<BaoQL> baoQL(DB db) async {
-    var res = await bindings.acall('bao_replica_open', [hnd, db.hnd]);
-    return BaoQL(res.handle);
+  /// Returns the versions of the specified file in the vault.
+  /// The [name] parameter specifies the file name.
+  Future<List<FileInfo>> versions(String name) async {
+    var res = await bindings.acall('bao_vault_versions', [hnd, name]);
+    return res.list.map((e) => FileInfo.fromMap(e)).toList();
   }
-
-  /// Sends a message to the specified directory.
-  Future<void> send(String dir, Message message) async {
-    var res = await bindings.acall('bao_mailbox_send', [hnd, dir, message]);
-    res.throwIfError();
-  }
-
-  /// Receives messages from the specified directory.
-  /// The [since] parameter can be used to filter messages received since a specific date.
-  /// The [fromId] parameter specifies the starting message ID for pagination.
-  Future<List<Message>> receive(String dir,
-      {DateTime? since, int fromId = 0}) async {
-    var res = await bindings.acall('bao_mailbox_receive',
-        [hnd, dir, since?.millisecondsSinceEpoch ?? 0, fromId]);
-    return res.list.map((x) => Message.fromJson(x)).toList();
-  }
-
-  /// Downloads the specified attachment of a message to the destination path.
-  Future<void> download(
-      String dir, Message message, int attachmentIndex, String dest) async {
-    var res = await bindings.acall(
-        'bao_mailbox_download', [hnd, dir, message, attachmentIndex, dest]);
-    res.throwIfError();
-  }
-
-  Mailbox get mailbox => Mailbox(hnd);
 }

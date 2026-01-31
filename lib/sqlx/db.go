@@ -56,7 +56,7 @@ func Open(driverName, dataSourceName, ddl string) (*DB, error) {
 	if ddl != "" {
 		err = d.Define(ddl)
 		if err != nil {
-			return nil, core.Errorw("Cannot define SQLite db in %s", dataSourceName, err)
+			return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", dataSourceName, err)
 		}
 	}
 
@@ -69,7 +69,7 @@ func (db *DB) Close() error {
 	core.Start("Closing SQLite db %s", db.DbPath)
 	err := db.Engine.Close()
 	if err != nil {
-		return core.Errorw("Cannot close SQLite db %s", db.DbPath, err)
+		return core.Error(core.DbError, "Cannot close SQLite db %s", db.DbPath, err)
 	}
 	core.Info("successfully closed SQLite db %s", db.DbPath)
 	core.End("")
@@ -81,7 +81,7 @@ func (db *DB) Delete() error {
 	if db.DbPath != MemoryDB {
 		err := os.Remove(db.DbPath)
 		if err != nil {
-			return core.Errorw("Cannot delete SQLite db file %s", db.DbPath, err)
+			return core.Error(core.DbError, "Cannot delete SQLite db file %s", db.DbPath, err)
 		}
 	}
 	core.Info("successfully deleted SQLite db file %s", db.DbPath)

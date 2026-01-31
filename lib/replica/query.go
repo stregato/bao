@@ -16,12 +16,12 @@ func (r *Replica) Query(query string, args sqlx.Args) (sqlx.RowsX, error) {
 	if r.transaction != nil {
 		rows, err = r.transaction.tx.Query(query, args)
 		if err != nil {
-			return sqlx.RowsX{}, core.Errorw("cannot execute query %s in transaction", query, err)
+			return sqlx.RowsX{}, core.Error(core.DbError, "cannot execute query %s in transaction", query, err)
 		}
 	} else {
 		rows, err = r.db.Query(query, args)
 		if err != nil {
-			return sqlx.RowsX{}, core.Errorw("cannot execute query %s", query, err)
+			return sqlx.RowsX{}, core.Error(core.DbError, "cannot execute query %s", query, err)
 		}
 	}
 	core.End("")
@@ -35,7 +35,7 @@ func (r *Replica) Fetch(query string, args sqlx.Args, max int) ([][]any, error) 
 	core.Start("query %s, %d args, max %d", query, len(args), max)
 	rows, err := r.Query(query, args)
 	if err != nil {
-		return nil, core.Errorw("cannot fetch query %s", query, err)
+		return nil, core.Error(core.DbError, "cannot fetch query %s", query, err)
 	}
 	defer rows.Close()
 	var results [][]any
@@ -43,7 +43,7 @@ func (r *Replica) Fetch(query string, args sqlx.Args, max int) ([][]any, error) 
 		var row []any
 		row, err = rows.Current()
 		if err != nil {
-			return nil, core.Errorw("cannot get current row", err)
+			return nil, core.Error(core.DbError, "cannot get current row", err)
 		}
 		results = append(results, row)
 	}
@@ -56,7 +56,7 @@ func (r *Replica) FetchOne(query string, args sqlx.Args) ([]any, error) {
 	core.Start("query %s, %d args", query, len(args))
 	rows, err := r.Query(query, args)
 	if err != nil {
-		return nil, core.Errorw("cannot fetch one query %s", query, err)
+		return nil, core.Error(core.DbError, "cannot fetch one query %s", query, err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
@@ -65,7 +65,7 @@ func (r *Replica) FetchOne(query string, args sqlx.Args) ([]any, error) {
 	}
 	row, err := rows.Current()
 	if err != nil {
-		return nil, core.Errorw("cannot get current row", err)
+		return nil, core.Error(core.DbError, "cannot get current row", err)
 	}
 	core.End("1 row")
 	return row, nil

@@ -17,25 +17,27 @@ func (v *Vault) Stat(name string) (File, error) {
 
 	var modTimeUnix int64
 	var file File
+	var dirName, fileName string
 
 	// Retrieve the file information from the database
 	err := v.DB.QueryRow("STAT_FILE", sqlx.Args{"vault": v.ID, "name": n, "dir": dir},
-		&file.Id, &modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.Attrs, &file.Realm)
+		&file.Id, &dirName, &fileName, &file.Realm, &file.StoreDir, &file.StoreName, &file.LocalCopy,
+		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs)
 	if err == sqlx.ErrNoRows {
 		return File{}, os.ErrNotExist
 	}
 	if err != nil {
-		return File{}, core.Errorw("cannot get file from DB for %s", name, err)
+		return File{}, core.Error(core.DbError, "cannot get file from DB for %s", name, err)
 	}
 	if file.Flags&Deleted != 0 {
 		return File{}, os.ErrNotExist
 	}
 
-	file.Name = path.Join(dir, n)
+	file.Name = path.Join(dirName, fileName)
 	file.ModTime = time.UnixMilli(modTimeUnix)
-	isDir := modTimeUnix == 0
+	file.IsDir = modTimeUnix == 0
 
-	core.Info("successfully got file info for %s: id=%d, modTime=%s, size=%d, allocated=%d, isDir=%t", name, file.Id, file.ModTime, file.Size, file.AllocatedSize, isDir)
+	core.Info("successfully got file info for %s: id=%d, modTime=%s, size=%d, allocated=%d, isDir=%t", name, file.Id, file.ModTime, file.Size, file.AllocatedSize, file.IsDir)
 	return file, nil
 }
 
@@ -43,7 +45,7 @@ func (v *Vault) Stat(name string) (File, error) {
 func (v *Vault) GetGroup(name string) (Realm, error) {
 	file, found, err := v.queryFileByName(name)
 	if err != nil {
-		return "", core.Errorw("cannot key id for group %s", name, err)
+		return "", core.Error(core.GenericError, "cannot key id for group %s", name, err)
 	}
 	if !found {
 		return "", os.ErrNotExist
@@ -52,7 +54,7 @@ func (v *Vault) GetGroup(name string) (Realm, error) {
 	var group Realm
 	err = v.DB.QueryRow("GET_GROUP_BY_KEY", sqlx.Args{"idx": file.KeyId}, &group)
 	if err != nil {
-		return "", core.Errorw("cannot get group for key %d", file.KeyId, err)
+		return "", core.Error(core.DbError, "cannot get group for key %d", file.KeyId, err)
 	}
 
 	core.Info("successfully got group for %s: %s", name, group)
@@ -63,7 +65,7 @@ func (v *Vault) GetGroup(name string) (Realm, error) {
 func (v *Vault) GetAuthor(name string) (security.PublicID, error) {
 	file, found, err := v.queryFileByName(name)
 	if err != nil {
-		return "", core.Errorw("cannot get author idx for %s", name, err)
+		return "", core.Error(core.DbError, "cannot get author idx for %s", name, err)
 	}
 	if !found {
 		return "", os.ErrNotExist

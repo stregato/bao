@@ -7,29 +7,29 @@ import (
 )
 
 func TestIdentity(t *testing.T) {
-	identity, err := NewPrivateID()
+	idSecret, err := NewPrivateID()
 	assert.NoErrorf(t, err, "cannot create identity")
 
-	publicID := identity.PublicIDMust()
-	assert.NotEmpty(t, publicID)
-	assert.NotEqual(t, identity, publicID)
+	id := idSecret.PublicIDMust()
+	assert.NotEmpty(t, id)
+	assert.NotEqual(t, idSecret, id)
 
-	cryptKey, signKey, err := DecodeID(string(identity))
+	cryptKey, signKey, err := idSecret.Decode()
 	assert.NoErrorf(t, err, "cannot decode private ID")
 
 	assert.NotEmpty(t, cryptKey)
 	assert.NotEmpty(t, signKey)
 
-	cryptKey, signKey, err = DecodeID(string(publicID))
+	cryptKey, signKey, err = id.Decode()
 	assert.NoErrorf(t, err, "cannot decode public ID")
 	assert.NotEmpty(t, cryptKey)
 	assert.NotEmpty(t, signKey)
 
-	identity, err = NewPrivateID()
+	idSecret, err = NewPrivateID()
 	assert.NoErrorf(t, err, "cannot create identity")
 
-	publicID = identity.PublicIDMust()
-	assert.NotEmpty(t, publicID)
-	assert.NotEqual(t, identity, publicID)
+	id = idSecret.PublicIDMust()
+	assert.NotEmpty(t, id)
+	assert.NotEqual(t, idSecret, id)
 
 }

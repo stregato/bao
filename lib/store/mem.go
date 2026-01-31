@@ -51,7 +51,7 @@ func (m *Memory) Read(name string, rang *Range, dest io.Writer, progress chan in
 		w, err = io.CopyN(dest, core.NewBytesReader(f.content[rang.From:]), rang.To-rang.From)
 	}
 	if err != nil {
-		return core.Errorw("cannot read from %s/%s:%v", m, name, err)
+		return core.Error(core.GenericError, "cannot read from %s/%s:%v", m, name, err)
 	}
 	if progress != nil {
 		progress <- w
@@ -65,7 +65,7 @@ func (m *Memory) Write(name string, source io.ReadSeeker, progress chan int64) e
 
 	_, err := io.Copy(&buf, source)
 	if err != nil {
-		return core.Errorw("cannot copy file '%s'' in memory:%v", name, err)
+		return core.Error(core.FileError, "cannot copy file '%s'' in memory:%v", name, err)
 	}
 	content := buf.Bytes()
 	if progress != nil {

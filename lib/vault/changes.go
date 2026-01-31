@@ -81,7 +81,7 @@ func (v *Vault) stageBlockChange(blockChange BlockChange) error {
 		"change":     blockChange.Payload,
 	})
 	if err != nil {
-		return core.Errorw("cannot add change to the database", err)
+		return core.Error(core.DbError, "cannot add change to the database", err)
 	}
 	core.End("staged %s to the database", changeTypeLabels[blockChange.Type])
 	return nil
@@ -93,14 +93,14 @@ func (v *Vault) getStagedChanges() ([]BlockChange, error) {
 	rows, err := v.DB.Query("GET_STAGED_CHANGES", sqlx.Args{"vault": v.ID})
 	if err != nil {
 
-		return nil, core.Errorw("cannot get staged changes", err)
+		return nil, core.Error(core.DbError, "cannot get staged changes", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var change BlockChange
 		if err := rows.Scan(&change.Type, &change.Payload); err != nil {
-			return nil, core.Errorw("cannot scan staged change", err)
+			return nil, core.Error(core.GenericError, "cannot scan staged change", err)
 		}
 		changes = append(changes, change)
 	}
@@ -135,10 +135,10 @@ func unmarshalChange(blockChange BlockChange) (Change, error) {
 		err = msgpack.Unmarshal(blockChange.Payload, &c)
 		change = &c
 	default:
-		return nil, core.Errorw("unknown change type: %d", blockChange.Type)
+		return nil, core.Error(core.GenericError, "unknown change type: %d", blockChange.Type)
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot unmarshal change of type %s", changeTypeLabels[blockChange.Type], err)
+		return nil, core.Error(core.ParseError, "cannot unmarshal change of type %s", changeTypeLabels[blockChange.Type], err)
 	}
 	return change, nil
 }
@@ -148,7 +148,7 @@ func marshalChange(change Change) (BlockChange, error) {
 
 	payload, err := msgpack.Marshal(change)
 	if err != nil {
-		return BlockChange{}, core.Errorw("cannot marshal change", err)
+		return BlockChange{}, core.Error(core.ParseError, "cannot marshal change", err)
 	}
 	defer core.End("")
 
@@ -164,7 +164,7 @@ func marshalChange(change Change) (BlockChange, error) {
 	case *Config:
 		return BlockChange{config, payload}, nil
 	default:
-		return BlockChange{}, core.Errorw("unknown change type: %T", change)
+		return BlockChange{}, core.Error(core.GenericError, "unknown change type: %T", change)
 	}
 }
 
@@ -179,7 +179,7 @@ func (a *AddAttribute) Apply(s *Vault, author security.PublicID) error {
 		"tm":    core.Now().Unix(),
 	})
 	if err != nil {
-		return core.Errorw("cannot add attribute %s for id %s", a.Name, author, err)
+		return core.Error(core.GenericError, "cannot add attribute %s for id %s", a.Name, author, err)
 	}
 
 	core.End("")
@@ -198,11 +198,11 @@ func (v *Vault) addKey(keyId uint64, key []byte) error {
 	}
 	key, err := security.EcDecrypt(v.UserID, key)
 	if err != nil {
-		return core.Errorw("cannot decrypt key. My id is %s", v.UserPublicID, err)
+		return core.Error(core.EncodeError, "cannot decrypt key. My id is %s", v.UserPublicID, err)
 	}
 	err = v.setKeyToDB(keyId, key)
 	if err != nil {
-		return core.Errorw("cannot add key %d in vault %s", keyId, v.ID, err)
+		return core.Error(core.GenericError, "cannot add key %d in vault %s", keyId, v.ID, err)
 	}
 	core.End("")
 	return nil
@@ -213,7 +213,7 @@ func (a *AddKey) Apply(v *Vault, author security.PublicID) error {
 
 	access, err := v.GetAccess(author)
 	if err != nil {
-		return core.Errorw("cannot get access for author %s", author, err)
+		return core.Error(core.DbError, "cannot get access for author %s", author, err)
 	}
 	var foundKeyForMe bool
 	if access&Admin != 0 {
@@ -221,7 +221,7 @@ func (a *AddKey) Apply(v *Vault, author security.PublicID) error {
 			if publicId == v.UserPublicID {
 				err = v.addKey(a.KeyId, encodedKey)
 				if err != nil {
-					return core.Errorw("cannot add key %d in vault %s", a.KeyId, v.ID, err)
+					return core.Error(core.GenericError, "cannot add key %d in vault %s", a.KeyId, v.ID, err)
 				}
 				foundKeyForMe = true
 			}
@@ -250,7 +250,7 @@ func (a *ActiveKeySet) Apply(v *Vault, author security.PublicID) error {
 	}
 	access, err := v.GetAccess(author)
 	if err != nil {
-		return core.Errorw("cannot get access for author %s", author, err)
+		return core.Error(core.DbError, "cannot get access for author %s", author, err)
 	}
 	if access&Admin != 0 {
 		for keyId, encodedKey := range a.Keys {
@@ -278,7 +278,7 @@ func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 	if !adminRight {
 		access, err := v.GetAccess(author)
 		if err != nil && err != sqlx.ErrNoRows {
-			return core.Errorw("cannot get access for author %s", author, err)
+			return core.Error(core.DbError, "cannot get access for author %s", author, err)
 		}
 		adminRight = access&Admin != 0
 	}
@@ -288,7 +288,7 @@ func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 			// Remove user if access is zero
 			err := v.removeUser(c.PublicID)
 			if err != nil {
-				return core.Errorw("cannot remove user %s from vault %s", c.PublicID, v.ID, err)
+				return core.Error(core.FileError, "cannot remove user %s from vault %s", c.PublicID, v.ID, err)
 			}
 			if v.UserPublicID == c.PublicID {
 				core.Info("my access to vault %s removed", v.ID)
@@ -297,7 +297,7 @@ func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 			// Set user access
 			err := v.setUser(c.PublicID, c.Access)
 			if err != nil {
-				return core.Errorw("cannot set user %s access for vault %s", c.PublicID, v.ID, err)
+				return core.Error(core.DbError, "cannot set user %s access for vault %s", c.PublicID, v.ID, err)
 			}
 			if v.UserPublicID == c.PublicID {
 				core.Info("my access for vault %s changed to %s", v.ID, AccessLabels[c.Access])

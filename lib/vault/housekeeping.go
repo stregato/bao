@@ -13,11 +13,11 @@ import (
 func (v *Vault) deleteFilesBeforeModTime(threshold time.Time) (int64, error) {
 	result, err := v.DB.Exec("DELETE_FILES_BEFORE_MODTIME", sqlx.Args{"vault": v.ID, "modTime": threshold.UnixMilli()})
 	if err != nil {
-		return 0, core.Errorw("cannot delete files before modTime %s", threshold, err)
+		return 0, core.Error(core.DbError, "cannot delete files before modTime %s", threshold, err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return 0, core.Errorw("cannot read affected rows for retention cleanup", err)
+		return 0, core.Error(core.DbError, "cannot read affected rows for retention cleanup", err)
 	}
 	return rows, nil
 }
@@ -26,7 +26,7 @@ func (v *Vault) calculateAllocatedSize() (int64, error) {
 	var total int64
 	err := v.DB.QueryRow("CALCULATE_ALLOCATED_SIZE", sqlx.Args{"vault": v.ID}, &total)
 	if err != nil {
-		return 0, core.Errorw("cannot calculate allocated size", err)
+		return 0, core.Error(core.GenericError, "cannot calculate allocated size", err)
 	}
 	return total, nil
 }

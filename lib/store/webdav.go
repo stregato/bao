@@ -43,7 +43,7 @@ func OpenWebDAV(id string, c WebDAVConfig) (Store, error) {
 	client := gowebdav.NewClient(conn, c.Username, c.Password)
 	err := client.Connect()
 	if err != nil {
-		return nil, core.Errorw("cannot connect to WebDAV '%s'", id, err)
+		return nil, core.Error(core.GenericError, "cannot connect to WebDAV '%s'", id, err)
 	}
 
 	w := &WebDAV{
@@ -64,7 +64,7 @@ func (w *WebDAV) Read(name string, rang *Range, dest io.Writer, progress chan in
 
 	r, err := w.c.ReadStream(p)
 	if err != nil {
-		return core.Errorw("cannot read WebDAV file %s", p, err)
+		return core.Error(core.FileError, "cannot read WebDAV file %s", p, err)
 	}
 
 	var written int64
@@ -78,7 +78,7 @@ func (w *WebDAV) Read(name string, rang *Range, dest io.Writer, progress chan in
 	} else {
 		written, err = io.CopyN(io.Discard, r, rang.From)
 		if err != nil {
-			return core.Errorw("cannot discard %n bytes in range GET on %s", rang.From, p, err)
+			return core.Error(core.GenericError, "cannot discard %n bytes in range GET on %s", rang.From, p, err)
 		}
 		if written != rang.From {
 			core.IsErr(io.ErrShortWrite, "Cannot read %d bytes in GET %s: %v")
@@ -91,7 +91,7 @@ func (w *WebDAV) Read(name string, rang *Range, dest io.Writer, progress chan in
 		}
 	}
 	if err != nil && err != io.EOF {
-		return core.Errorw("cannot read from GET response on %s", p, err)
+		return core.Error(core.GenericError, "cannot read from GET response on %s", p, err)
 	}
 	r.Close()
 	return nil
@@ -102,7 +102,7 @@ func (w *WebDAV) Write(name string, source io.ReadSeeker, progress chan int64) e
 
 	err := w.c.WriteStream(p, source, 0)
 	if err != nil {
-		return core.Errorw("cannot write WebDAV file %s", p, err)
+		return core.Error(core.FileError, "cannot write WebDAV file %s", p, err)
 	}
 
 	return nil
@@ -143,7 +143,7 @@ func (w *WebDAV) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	if err != nil {
-		return nil, core.Errorw("cannot read WebDAV folder %s", p, err)
+		return nil, core.Error(core.GenericError, "cannot read WebDAV folder %s", p, err)
 	}
 	return f, err
 }

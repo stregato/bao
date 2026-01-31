@@ -4,19 +4,18 @@ package main
 
 import (
 	"encoding/json"
-	"math/rand"
 	"syscall/js"
-	"time"
 
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/store"
 	libbao "github.com/stregato/bao/lib/vault"
 )
 
 var (
 	demoDB    *sqlx.DB
-	demoStash *libbao.Bao
+	demoVault *libbao.Vault
 )
 
 func asPromise(fn func(this js.Value, args []js.Value) (any, error)) js.Func {
@@ -47,15 +46,25 @@ func asPromise(fn func(this js.Value, args []js.Value) (any, error)) js.Func {
 }
 
 func baoCreate(this js.Value, args []js.Value) (any, error) {
-	url := args[0].String()
+	realm := args[0].String()
 	var err error
+
+	// Create in-memory database
 	demoDB, err = sqlx.Open("mem", "", "")
 	if err != nil {
 		return nil, err
 	}
 
+	// Create in-memory store
+	s, err := store.OpenMemory("mem://demo")
+	if err != nil {
+		return nil, err
+	}
+
 	id := security.NewPrivateIDMust()
-	demoStash, err = libbao.Create(demoDB, id, url, libbao.Config{})
+
+	// Create vault with new signature: (realm, privateID, store, db, config)
+	demoVault, err = libbao.Create(libbao.Realm(realm), id, s, demoDB, libbao.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +72,7 @@ func baoCreate(this js.Value, args []js.Value) (any, error) {
 }
 
 func baoOpen(this js.Value, args []js.Value) (any, error) {
-	url := args[0].String()
+	realm := args[0].String()
 	var err error
 	if demoDB == nil {
 		demoDB, err = sqlx.Open("mem", "", "")
@@ -71,8 +80,18 @@ func baoOpen(this js.Value, args []js.Value) (any, error) {
 			return nil, err
 		}
 	}
+
+	// Create in-memory store
+	s, err := store.OpenMemory("mem://demo")
+	if err != nil {
+		return nil, err
+	}
+
 	id := security.NewPrivateIDMust()
-	demoStash, err = libbao.Open(demoDB, id, url, security.PublicID(""))
+	authorID := security.PublicID("")
+
+	// Open vault with new signature: (realm, privateID, authorID, store, db)
+	demoVault, err = libbao.Open(libbao.Realm(realm), id, authorID, s, demoDB)
 	if err != nil {
 		return nil, err
 	}
@@ -80,42 +99,34 @@ func baoOpen(this js.Value, args []js.Value) (any, error) {
 }
 
 func baoWrite(this js.Value, args []js.Value) (any, error) {
-	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+	if demoVault == nil {
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
-	name := args[0].String()
-	group := libbao.Group(args[1].String())
-	content := args[2].String()
-	fi, err := demoStash.Write(name, "", group, []byte(content), 0, nil)
-	if err != nil {
-		return nil, err
-	}
-	return fi, nil
+	// TODO: Update to new Vault API
+	// name := args[0].String()
+	// content := args[2].String()
+	// fi, err := demoVault.Write(name, content, ...)
+	return nil, core.Errorw(core.GenericError, "write not yet implemented for new API")
 }
 
 func baoRead(this js.Value, args []js.Value) (any, error) {
-	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+	if demoVault == nil {
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
-	name := args[0].String()
-	dest := "/tmp/" + name + "-" + time.Now().Format("20060102150405") + "-" + string(rune('a'+rand.Intn(26)))
-	file, err := demoStash.Read(name, dest, 0, nil)
-	if err != nil {
-		return nil, err
-	}
-	return file, nil
+	// TODO: Update to new Vault API
+	// name := args[0].String()
+	// file, err := demoVault.Read(name, ...)
+	return nil, core.Errorw(core.GenericError, "read not yet implemented for new API")
 }
 
 func baoList(this js.Value, args []js.Value) (any, error) {
-	if demoStash == nil {
-		return nil, core.Errorw("bao not opened")
+	if demoVault == nil {
+		return nil, core.Errorw(core.GenericError, "bao not opened")
 	}
-	dir := args[0].String()
-	ls, err := demoStash.ReadDir(dir, time.Time{}, 0, 0)
-	if err != nil {
-		return nil, err
-	}
-	return ls, nil
+	// TODO: Update to new Vault API
+	// dir := args[0].String()
+	// ls, err := demoVault.ReadDir(dir, ...)
+	return nil, core.Errorw(core.GenericError, "list not yet implemented for new API")
 }
 
 func register() {
@@ -151,7 +162,7 @@ func dbOpen(this js.Value, args []js.Value) (any, error) {
 
 func dbExec(this js.Value, args []js.Value) (any, error) {
 	if demoDB == nil {
-		return nil, core.Errorw("db not opened")
+		return nil, core.Errorw(core.DbError, "db not opened")
 	}
 	key := args[0].String()
 	var m map[string]any
@@ -173,7 +184,7 @@ func dbExec(this js.Value, args []js.Value) (any, error) {
 
 func dbFetch(this js.Value, args []js.Value) (any, error) {
 	if demoDB == nil {
-		return nil, core.Errorw("db not opened")
+		return nil, core.Errorw(core.DbError, "db not opened")
 	}
 	key := args[0].String()
 	var m map[string]any
@@ -193,7 +204,7 @@ func dbFetch(this js.Value, args []js.Value) (any, error) {
 
 func dbFetchOne(this js.Value, args []js.Value) (any, error) {
 	if demoDB == nil {
-		return nil, core.Errorw("db not opened")
+		return nil, core.Errorw(core.DbError, "db not opened")
 	}
 	key := args[0].String()
 	var m map[string]any

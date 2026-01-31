@@ -9,14 +9,14 @@ import (
 )
 
 func DiffieHellmanKey(privateID PrivateID, publicID PublicID) ([]byte, error) {
-	privateKey, _, err := DecodeID(string(privateID))
+	privateKey, _, err := privateID.Decode()
 	if err != nil {
-		return nil, core.Errorw("cannot decode keys", err)
+		return nil, core.Error(core.ParseError, "cannot decode keys", err)
 	}
 
-	publicKey, _, err := DecodeID(string(publicID))
+	publicKey, _, err := publicID.Decode()
 	if err != nil {
-		return nil, core.Errorw("cannot decode keys", err)
+		return nil, core.Error(core.ParseError, "cannot decode keys", err)
 	}
 
 	pr := eciesgo.NewPrivateKeyFromBytes(privateKey)
@@ -26,12 +26,12 @@ func DiffieHellmanKey(privateID PrivateID, publicID PublicID) ([]byte, error) {
 
 	pu, err := eciesgo.NewPublicKeyFromBytes(publicKey)
 	if err != nil {
-		return nil, core.Errorw("cannot convert bytes to secp256k1 public key", err)
+		return nil, core.Error(core.GenericError, "cannot convert bytes to secp256k1 public key", err)
 	}
 
 	data, err := pr.ECDH(pu)
 	if err != nil {
-		return nil, core.Errorw("cannot perform ECDH", err)
+		return nil, core.Error(core.GenericError, "cannot perform ECDH", err)
 	}
 
 	h := sha256.Sum256(data)

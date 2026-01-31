@@ -103,7 +103,7 @@ func encodeBlock(id security.PrivateID, block Block) ([]byte, error) {
 
 	h, err := blake2b.New512(nil)
 	if err != nil {
-		return nil, core.Errorw("cannot create hash", err)
+		return nil, core.Error(core.GenericError, "cannot create hash", err)
 	}
 
 	for _, change := range block.BlockChanges {
@@ -120,17 +120,17 @@ func encodeBlock(id security.PrivateID, block Block) ([]byte, error) {
 	hash := h.Sum(nil)
 	signature, err := security.Sign(id, hash)
 	if err != nil {
-		return nil, core.Errorw("cannot sign block", err)
+		return nil, core.Error(core.GenericError, "cannot sign block", err)
 	}
 	block.Signature = signature
 
 	data, err := msgpack.Marshal(block)
 	if err != nil {
-		return nil, core.Errorw("cannot marshal signed block", err)
+		return nil, core.Error(core.ParseError, "cannot marshal signed block", err)
 	}
 	data, err = core.GzipCompress(data)
 	if err != nil {
-		return nil, core.Errorw("cannot compress signed block", err)
+		return nil, core.Error(core.EncodeError, "cannot compress signed block", err)
 	}
 
 	core.End("size %d, signature %x, hash %x, author %s", len(data), block.Signature, hash, block.Author)
@@ -143,24 +143,24 @@ func decodeBlock(data []byte) (block Block, err error) {
 	// Decompress the block data
 	data, err = core.GzipDecompress(data)
 	if err != nil {
-		return Block{}, core.Errorw("cannot decompress block", err)
+		return Block{}, core.Error(core.EncodeError, "cannot decompress block", err)
 	}
 
 	err = msgpack.Unmarshal(data, &block)
 	if err != nil {
 		core.Info("cannot unmarshal block")
-		return Block{}, core.Errorw("cannot unmarshal block", err)
+		return Block{}, core.Error(core.ParseError, "cannot unmarshal block", err)
 	}
 
 	// Validate the signature
 	if len(block.Signature) != security.SignatureSize {
 		core.Info("invalid signature length: %d, expected: %d", len(block.Signature), security.SignatureSize)
-		return Block{}, core.Errorw("invalid signature length: %d, expected: %d", len(block.Signature), security.SignatureSize)
+		return Block{}, core.Error(core.AuthError, "invalid signature length: %d, expected: %d", len(block.Signature), security.SignatureSize)
 	}
 
 	h, err := blake2b.New512(nil)
 	if err != nil {
-		return Block{}, core.Errorw("cannot create hash", err)
+		return Block{}, core.Error(core.GenericError, "cannot create hash", err)
 	}
 
 	for _, change := range block.BlockChanges {
@@ -174,7 +174,7 @@ func decodeBlock(data []byte) (block Block, err error) {
 
 	hash := h.Sum(nil)
 	if !security.Verify(block.Author, hash, block.Signature) {
-		return Block{}, core.Errorw("invalid block signature: %x, author %s, hash %x", block.Signature, block.Author, hash)
+		return Block{}, core.Error(core.AuthError, "invalid block signature: %x, author %s, hash %x", block.Signature, block.Author, hash)
 	}
 
 	core.Trace("decoded block with signature %x, parent hash %x, timestamp %s, author %s",
@@ -192,7 +192,7 @@ func (v *Vault) getLastBlockHash() ([]byte, error) {
 		return make([]byte, 64), nil
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot get last block hash", err)
+		return nil, core.Error(core.DbError, "cannot get last block hash", err)
 	}
 	core.End("hash %x", lastHash)
 	return lastHash, nil
@@ -209,12 +209,12 @@ func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, core.Errorw("cannot read block %s", blockPath, err)
+		return nil, core.Error(core.GenericError, "cannot read block %s", blockPath, err)
 	}
 
 	block, err := decodeBlock(data)
 	if err != nil {
-		return nil, core.Errorw("cannot decode block %s", blockPath, err)
+		return nil, core.Error(core.ParseError, "cannot decode block %s", blockPath, err)
 	}
 
 	hash = core.BigHash(data)
@@ -226,18 +226,18 @@ func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 		"payload": data,
 	})
 	if err != nil {
-		return nil, core.Errorw("cannot insert block %s into DB", blockPath, err)
+		return nil, core.Error(core.DbError, "cannot insert block %s into DB", blockPath, err)
 	}
 
 	for _, blockChange := range block.BlockChanges {
 		c, err := unmarshalChange(blockChange)
 		if err != nil {
-			core.Errorw("cannot unmarshal change %v", blockChange, err)
+			core.Error(core.ParseError, "cannot unmarshal change %v", blockChange, err)
 			continue
 		}
 		err = c.Apply(v, block.Author)
 		if err != nil {
-			return nil, core.Errorw("cannot handle change %v", c, err)
+			return nil, core.Error(core.GenericError, "cannot handle change %v", c, err)
 		}
 		core.Info("applied change %v from block %s author %x", c, blockPath, block.Author.Hash())
 	}
@@ -251,7 +251,7 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 	core.Start("")
 	hash, err = v.getLastBlockHash()
 	if err != nil {
-		return nil, core.Errorw("cannot get last block signature", err)
+		return nil, core.Error(core.DbError, "cannot get last block signature", err)
 	}
 	if hash == nil {
 		hash = make([]byte, security.SignatureSize)
@@ -264,7 +264,7 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 
 		nextHash, err = v.importBlockFromStorage(name)
 		if err != nil {
-			return nil, core.Errorw("cannot import block %s from store", name, err)
+			return nil, core.Error(core.GenericError, "cannot import block %s from store", name, err)
 		}
 		if nextHash == nil {
 			core.End("%d blocks imported, last hash %x", cnt, hash)
@@ -273,7 +273,7 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 		cnt++
 		hash = nextHash
 	}
-	return nil, core.Errorw("cannot import blocks from store", err)
+	return nil, core.Error(core.GenericError, "cannot import blocks from store", err)
 }
 
 func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
@@ -281,7 +281,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 
 	blockChanges, err := v.getStagedChanges()
 	if err != nil {
-		return false, core.Errorw("cannot get staged changes", err)
+		return false, core.Error(core.DbError, "cannot get staged changes", err)
 	}
 	if len(blockChanges) == 0 {
 		core.End("no staged changes to export")
@@ -297,7 +297,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 
 	payload, err := encodeBlock(v.UserID, block)
 	if err != nil {
-		return false, core.Errorw("cannot encode block", err)
+		return false, core.Error(core.EncodeError, "cannot encode block", err)
 	}
 
 	name := base64.RawURLEncoding.EncodeToString(hash)
@@ -311,29 +311,34 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 
 	err = store.WriteFile(v.store, blockPath, payload)
 	if err != nil {
-		return true, core.Errorw("cannot write block %s", blockPath, err)
+		return true, core.Error(core.GenericError, "cannot write block %s", blockPath, err)
 	}
 
-	time.Sleep(time.Second)
-	data, err := store.ReadFile(v.store, blockPath)
-	if err != nil {
-		return true, core.Errorw("cannot read block %s after writing", blockPath, err)
-	}
-
-	if !bytes.Equal(payload, data) {
-		core.End("data mismatch on %s, original size %d, read size %d", blockPath, len(payload), len(data))
-		return true, nil
+	for i := 0; ; i++ {
+		data, err := store.ReadFile(v.store, blockPath)
+		if err != nil {
+			return true, core.Error(core.GenericError, "cannot read block %s after writing", blockPath, err)
+		}
+		if bytes.Equal(payload, data) {
+			break
+		}
+		if i >= 3 {
+			core.End("data mismatch on %s after retries, original size %d, read size %d", blockPath, len(payload), len(data))
+			return true, nil
+		}
+		core.Info("data mismatch on %s, retrying read %d", blockPath, i+1)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	for _, bc := range blockChanges {
 		c, err := unmarshalChange(bc)
 		if err != nil {
-			return false, core.Errorw("cannot unmarshal change %v", bc, err)
+			return false, core.Error(core.ParseError, "cannot unmarshal change %v", bc, err)
 		}
 
 		err = c.Apply(v, v.UserPublicID)
 		if err != nil {
-			return false, core.Errorw("cannot handle change %v", c, err)
+			return false, core.Error(core.GenericError, "cannot handle change %v", c, err)
 		}
 		core.Info("%s by %x in %s", c, v.UserPublicID.Hash(), v.ID)
 	}
@@ -346,7 +351,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		"payload": payload,
 	})
 	if err != nil {
-		return false, core.Errorw("cannot insert block %s into DB", blockPath, err)
+		return false, core.Error(core.DbError, "cannot insert block %s into DB", blockPath, err)
 	}
 
 	v.DB.Exec("DELETE_STAGED_CHANGES", sqlx.Args{"vault": v.ID})
@@ -366,17 +371,17 @@ func (v *Vault) syncBlockChain() error {
 	for !success && cnt < 10 {
 		lastHash, err := v.importBlocksFromStorage()
 		if err != nil {
-			return core.Errorw("cannot import blocks from store.", err)
+			return core.Error(core.GenericError, "cannot import blocks from store.", err)
 		}
 
 		success, err = v.exportBlocksToStorage(lastHash)
 		if err != nil {
-			return core.Errorw("cannot export changes to store.", err)
+			return core.Error(core.GenericError, "cannot export changes to store.", err)
 		}
 	}
 
 	if cnt == 10 {
-		return core.Errorw("cannot sync blockchain after %d attempts", cnt)
+		return core.Error(core.GenericError, "cannot sync blockchain after %d attempts", cnt)
 	}
 
 	core.End("done in %v", core.Now().Sub(now))

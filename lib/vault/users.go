@@ -10,7 +10,7 @@ func (v *Vault) removeUser(userID security.PublicID) error {
 	core.Start("removing user %s from %s", userID, v.ID)
 	_, err := v.DB.Exec("REMOVE_USER", sqlx.Args{"vault": v.ID, "userId": userID})
 	if err != nil {
-		return core.Errorw("cannot remove user %s from %s", userID, v.ID, err)
+		return core.Error(core.FileError, "cannot remove user %s from %s", userID, v.ID, err)
 	}
 	core.Info("removed user %s from %s", userID, v.ID)
 	core.End("")
@@ -23,7 +23,7 @@ func (v *Vault) setUser(userID security.PublicID, access Access) error {
 	shortID := userID.Hash()
 	_, err := v.DB.Exec("SET_USER", sqlx.Args{"vault": v.ID, "userId": userID, "shortId": shortID, "access": access})
 	if err != nil {
-		return core.Errorw("cannot set user %s in %s", userID, v.ID, err)
+		return core.Error(core.DbError, "cannot set user %s in %s", userID, v.ID, err)
 	}
 
 	core.End("set user %s with access %s in %s", userID, AccessLabels[access], v.ID)

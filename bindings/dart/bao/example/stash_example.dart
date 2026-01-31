@@ -10,14 +10,13 @@ void main() async {
   final storeConfig = StoreConfig(
     id: 'test',
     type: 'local',
-    local: LocalConfig(base: '/tmp/${publicID(alice)}/sample'),
+    local: LocalConfig(base: '/tmp/${alice.toString()}/sample'),
   );
   var store = await Store.open(storeConfig);
-  var v = await Vault.create(users, alice, db, store);
+  var v = await Vault.create(users, aliceSecret, store, db);
 
-  var bobID = publicID(bob);
-  v.syncAccess([AccessChange(bobID, accessReadWrite)]);
-  print(v.getAccess(users));
+  v.syncAccess([AccessChange(bob, accessReadWrite)]);
+  print(v.getAccess(bob));
 
   v.close();
 }

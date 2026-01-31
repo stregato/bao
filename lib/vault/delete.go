@@ -13,7 +13,7 @@ func (v *Vault) Delete(name string, options IOOption) error {
 
 	file, found, err := v.queryFileByName(name)
 	if err != nil {
-		return core.Errorw("cannot query file %s", name, err)
+		return core.Error(core.DbError, "cannot query file %s", name, err)
 	}
 	if !found {
 		return nil // File does not exist, nothing to delete
@@ -25,19 +25,19 @@ func (v *Vault) Delete(name string, options IOOption) error {
 
 	_, err = v.writeRecord(name, "", PendingWrite|Deleted, nil)
 	if err != nil {
-		return core.Errorw("cannot write record for file %s in %s", name, v.Realm, err)
+		return core.Error(core.FileError, "cannot write record for file %s in %s", name, v.Realm, err)
 	}
 
 	head, err := encodeHead(v.Realm, file, v.UserID, v.getKey)
 	if err != nil {
-		return core.Errorw("cannot encode head in Bao.Delete", err)
+		return core.Error(core.DbError, "cannot encode head in Bao.Delete", err)
 	}
 
 	v.scheduleChangeFile()
 	defer v.completeChangeFile()
 	err = store.WriteFile(v.store, path.Join(storeDir, "h", storeName), head)
 	if err != nil {
-		return core.Errorw("cannot write head for file %s in %s", name, file.Realm, err)
+		return core.Error(core.FileError, "cannot write head for file %s in %s", name, file.Realm, err)
 	}
 
 	switch {
@@ -48,7 +48,7 @@ func (v *Vault) Delete(name string, options IOOption) error {
 	default:
 		err = v.wipe(file)
 		if err != nil {
-			return core.Errorw("cannot wipe file %s in %s", name, file.Realm, err)
+			return core.Error(core.FileError, "cannot wipe file %s in %s", name, file.Realm, err)
 		}
 	}
 	core.End("")
@@ -61,7 +61,7 @@ func (v *Vault) wipe(file File) error {
 	ph := path.Join(file.StoreDir, "/b", file.StoreName)
 	err := v.store.Delete(ph)
 	if err != nil {
-		return core.Errorw("cannot delete file %s in %s", file.Name, file.Realm, err)
+		return core.Error(core.DbError, "cannot delete file %s in %s", file.Name, file.Realm, err)
 	}
 
 	core.End("successfully wiped file %s in %s", file.Name, file.Realm)

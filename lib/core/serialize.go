@@ -26,7 +26,7 @@ func WriteBytes(data []byte, w io.Writer) error {
 		return io.ErrShortWrite
 	}
 	if err != nil {
-		return Errorw("cannot write data to stream", err)
+		return Error(GenericError, "cannot write data to stream", err)
 	}
 
 	n, err = w.Write(data)
@@ -34,7 +34,7 @@ func WriteBytes(data []byte, w io.Writer) error {
 		return io.ErrShortWrite
 	}
 	if err != nil {
-		return Errorw("cannot write data to stream", err)
+		return Error(GenericError, "cannot write data to stream", err)
 	}
 	return err
 }
@@ -43,7 +43,7 @@ func ReadBytes(r io.Reader) ([]byte, error) {
 	lenB := make([]byte, 4)
 	n, err := r.Read(lenB)
 	if err != nil {
-		return nil, Errorw("cannot read data from stream", err)
+		return nil, Error(GenericError, "cannot read data from stream", err)
 	}
 	if n != len(lenB) {
 		return nil, io.ErrNoProgress
@@ -55,7 +55,7 @@ func ReadBytes(r io.Reader) ([]byte, error) {
 	for n < len(data) {
 		m, err := r.Read(data[n:])
 		if err != nil {
-			return nil, Errorw("cannot read data from stream", err)
+			return nil, Error(GenericError, "cannot read data from stream", err)
 		}
 		n += m
 		cnt--

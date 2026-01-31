@@ -186,7 +186,7 @@ late ArgsiS libStoreDelete;
 
 // Bao functions
 late Argssiis libBaoCreate;
-late Argssiiss libBaoOpen;
+late ArgsiSSii libBaoOpen;
 late Argsi libBaoClose;
 late Argsiis libBaoSyncAccess;
 late Argsi libBaoGetAccesses;
@@ -232,7 +232,7 @@ void loadFunctions(DynamicLibrary lib) {
       lib.lookupFunction<Args, Args>('bao_security_newPrivateID');
   libNewKeyPair =
       lib.lookupFunction<Args, Args>('bao_security_newKeyPair');
-  libPublicID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_publicID');
+  libPublicID = lib.lookupFunction<Args, Args>('bao_security_publicID');
   libDecodeID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_decodeID');
   libEcEncrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecEncrypt');
   libEcDecrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecDecrypt');
@@ -258,7 +258,7 @@ void loadFunctions(DynamicLibrary lib) {
   libBaoCreate =
       lib.lookupFunction<ArgsSSIIS, Argssiis>("bao_vault_create");
   libBaoOpen =
-      lib.lookupFunction<ArgsSSIISS, Argssiiss>("bao_vault_open");
+      lib.lookupFunction<ArgsSSSII, ArgsiSSii>("bao_vault_open");
   libBaoClose = lib.lookupFunction<ArgsI, Argsi>("bao_vault_close");
   libBaoSyncAccess =
       lib.lookupFunction<ArgsIiS, Argsiis>("bao_vault_syncAccess");

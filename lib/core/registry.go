@@ -22,7 +22,7 @@ func (h *Registry[T]) Add(v T) int64 {
 func (h *Registry[T]) Get(i int64) (T, error) {
 	v, ok := h.handles[i]
 	if !ok {
-		return v, Errorw("handle %d not found", i)
+		return v, Error(GenericError, "handle %d not found", i)
 	}
 	return v, nil
 }

@@ -1,6 +1,7 @@
 import ctypes
 import json
 from .baod import *
+from .error import WrappedError
 
 lib = load_lib()
 
@@ -23,8 +24,10 @@ lib.bao_security_publicID.argtypes = [ctypes.c_char_p]
 lib.bao_security_publicID.restype = Result
 lib.bao_security_newKeyPair.argtypes = []
 lib.bao_security_newKeyPair.restype = Result
-lib.bao_security_decodeID.argtypes = [ctypes.c_char_p]
-lib.bao_security_decodeID.restype = Result
+lib.bao_security_decodePrivateID.argtypes = [ctypes.c_char_p]
+lib.bao_security_decodePrivateID.restype = Result
+lib.bao_security_decodePublicID.argtypes = [ctypes.c_char_p]
+lib.bao_security_decodePublicID.restype = Result
 lib.bao_security_ecEncrypt.argtypes = [ctypes.c_char_p, Data]
 lib.bao_security_ecEncrypt.restype = Result
 lib.bao_security_ecDecrypt.argtypes = [ctypes.c_char_p, Data]
@@ -63,7 +66,7 @@ lib.bao_store_delete.restype = Result
 # Vault
 lib.bao_vault_create.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_char_p]
 lib.bao_vault_create.restype = Result
-lib.bao_vault_open.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_char_p, ctypes.c_char_p]
+lib.bao_vault_open.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_longlong, ctypes.c_longlong]
 lib.bao_vault_open.restype = Result
 lib.bao_vault_close.argtypes = [ctypes.c_longlong]
 lib.bao_vault_close.restype = Result
@@ -97,6 +100,8 @@ lib.bao_vault_write.argtypes = [ctypes.c_longlong, ctypes.c_char_p, ctypes.c_cha
 lib.bao_vault_write.restype = Result
 lib.bao_vault_delete.argtypes = [ctypes.c_longlong, ctypes.c_char_p, ctypes.c_int]
 lib.bao_vault_delete.restype = Result
+lib.bao_vault_versions.argtypes = [ctypes.c_longlong, ctypes.c_char_p]
+lib.bao_vault_versions.restype = Result
 lib.bao_vault_allocatedSize.argtypes = [ctypes.c_longlong]
 lib.bao_vault_allocatedSize.restype = Result
 
@@ -135,7 +140,11 @@ def consume(r, returnBytes: bool = False):
     """Consume a Result by decoding the JSON payload and freeing the buffer."""
     try:
         if r.err:
-            raise Exception(r.err.decode("utf-8"))
+            err_text = r.err.decode("utf-8")
+            wrapped = WrappedError.from_payload(err_text)
+            if wrapped is not None:
+                raise wrapped
+            raise Exception(err_text)
 
         if not r.ptr:
             return None

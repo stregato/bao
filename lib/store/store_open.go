@@ -35,5 +35,5 @@ func Open(c StoreConfig) (Store, error) {
 	case "relay":
 		return OpenRelay(c.Id, c.Relay)
 	}
-	return nil, core.Errorw("unsupported type '%s' for store.%s", c.Type, c.Id)
+	return nil, core.Error(core.GenericError, "unsupported type '%s' for store.%s", c.Type, c.Id)
 }

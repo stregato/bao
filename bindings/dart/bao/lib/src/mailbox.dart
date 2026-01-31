@@ -6,9 +6,9 @@ class Mailbox {
 
   Mailbox(this.vaultHandle);
 
-  Future<void> send(String dir, String group, Message message) async {
+  Future<void> send(String dir, Message message) async {
     var res = await bindings.acall(
-        'bao_mailbox_send', [vaultHandle, dir, group, message]);
+        'bao_mailbox_send', [vaultHandle, dir, message]);
     res.throwIfError();
   }
 

@@ -66,6 +66,11 @@ public class Result extends Structure implements Structure.ByValue {
         return bytes == null ? "" : new String(bytes);
     }
 
+    public int integer() throws IOException {
+        check();
+        return mapper.readValue(data(), Integer.class);
+    }
+
     public byte[] bytes() {
         check();
         return data();

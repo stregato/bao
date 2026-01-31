@@ -1,3 +1,6 @@
+//go:build !js
+// +build !js
+
 // Package main exposes a thin, Go-friendly facade to the core bao APIs so Go
 // callers can import github.com/stregato/bao/lib and reach the same primitives
 // used by the cgo bindings without digging through subpackages.
@@ -28,11 +31,6 @@ func NewPrivateID() (security.PrivateID, error) {
 // PublicID derives the public half of a PrivateID.
 func PublicID(id security.PrivateID) (security.PublicID, error) {
 	return id.PublicID()
-}
-
-// DecodeID splits a composite ID into its encryption and signing keys.
-func DecodeID(id string) ([]byte, []byte, error) {
-	return security.DecodeID(id)
 }
 
 // ECEncrypt encrypts data using the provided public identity.

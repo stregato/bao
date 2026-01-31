@@ -7,7 +7,6 @@ import java.util.Map;
 public class FileInfo {
     public long id;
     public String name;
-    public String group;
     public long size;
     public long allocatedSize;
     public Instant modTime;
@@ -23,7 +22,6 @@ public class FileInfo {
         var fi = new FileInfo();
         fi.id = ((Number) m.getOrDefault("id", 0)).longValue();
         fi.name = (String) m.getOrDefault("name", "");
-        fi.group = (String) m.getOrDefault("group", "");
         fi.size = ((Number) m.getOrDefault("size", 0)).longValue();
         fi.allocatedSize = ((Number) m.getOrDefault("allocatedSize", 0)).longValue();
         var mod = (String) m.getOrDefault("modTime", "1970-01-01T00:00:00Z");

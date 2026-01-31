@@ -15,7 +15,7 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-file-go/azfile"
-	
+
 	"github.com/stregato/bao/lib/core"
 )
 
@@ -42,13 +42,13 @@ type AzureConfig struct {
 // OpenAzure create a new Exchanger. The url is in the format azure://accountname.file.core.windows.net/share/basepath?a=accountname&k=accountkey
 func OpenAzure(id string, c AzureConfig) (Store, error) {
 	if c.Share == "" {
-		return nil, core.Errorw("azure share is missing for %s", id)
+		return nil, core.Error(core.GenericError, "azure share is missing for %s", id)
 	}
 
 	endpoint := fmt.Sprintf("https://%s.file.core.windows.net", c.AccountName)
 	baseURL, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, core.Errorw("invalid azure endpoint %s", endpoint, err)
+		return nil, core.Error(core.GenericError, "invalid azure endpoint %s", endpoint, err)
 	}
 
 	dir := c.Share
@@ -58,7 +58,7 @@ func OpenAzure(id string, c AzureConfig) (Store, error) {
 
 	credential, err := azfile.NewSharedKeyCredential(c.AccountName, c.AccountKey)
 	if err != nil {
-		return nil, core.Errorw("cannot create Azure credential for %s", id, err)
+		return nil, core.Error(core.GenericError, "cannot create Azure credential for %s", id, err)
 	}
 
 	p := azfile.NewPipeline(credential, azfile.PipelineOptions{})

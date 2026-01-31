@@ -12,10 +12,10 @@ public class Mailbox {
         public Map<String, Object> fileInfo;
     }
 
-    private final Bao bao;
+    private final Vault bao;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public Mailbox(Bao bao) {
+    public Mailbox(Vault bao) {
         this.bao = bao;
     }
 

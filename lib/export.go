@@ -44,7 +44,7 @@ func cResult(v any, hnd int64, err error) C.Result {
 	if !ok {
 		val, err = json.Marshal(v)
 		if err != nil {
-			logrus.Errorf("cannot marshal result %v: %v", v, err)
+			logrus.Errorf("cannot marshal result %v", v, err)
 			return C.Result{nil, 0, C.longlong(hnd), C.CString(err.Error())}
 		}
 	}
@@ -71,7 +71,7 @@ func cInput(err error, i *C.char, v any) error {
 	data := C.GoString(i)
 	err = json.Unmarshal([]byte(data), v)
 	if err != nil {
-		return core.Errorw("failed to unmarshal input - %v: %s", err, data)
+		return core.Error(core.ParseError, "failed to unmarshal input - %v: %s", err, data)
 	}
 	return nil
 }
@@ -145,7 +145,7 @@ func bao_security_newPrivateID() C.Result {
 	core.TimeTrack()
 	identity, err := security.NewPrivateID()
 	if err != nil {
-		core.LogError("cannot generate private ID: %v", err)
+		core.LogError("cannot generate private ID", err)
 		core.End("failed to generate private ID")
 		return cResult(nil, 0, err)
 	}
@@ -162,7 +162,7 @@ func bao_security_publicID(privateID *C.char) C.Result {
 	core.TimeTrack()
 	id, err := security.PrivateID(privID).PublicID()
 	if err != nil {
-		core.LogError("cannot derive public ID from provided private ID: %v", err)
+		core.LogError("cannot derive public ID from provided private ID", err)
 		core.End("failed to derive public ID")
 		return cResult(nil, 0, err)
 	}
@@ -178,7 +178,7 @@ func bao_security_newKeyPair() C.Result {
 	core.TimeTrack()
 	publicID, privateID, err := security.NewKeyPair()
 	if err != nil {
-		core.LogError("cannot generate new key pair: %v", err)
+		core.LogError("cannot generate new key pair", err)
 		core.End("failed to generate new key pair")
 		return cResult(nil, 0, err)
 	}
@@ -198,7 +198,7 @@ func bao_security_ecEncrypt(id *C.char, plainData C.Data) C.Result {
 
 	cipherData, err := security.EcEncrypt(security.PublicID(idStr), data)
 	if err != nil {
-		core.LogError("cannot encrypt plaintext with provided public ID: %v", err)
+		core.LogError("cannot encrypt plaintext with provided public ID", err)
 		core.End("failed for id len %d", len(idStr))
 		return cResult(nil, 0, err)
 	}
@@ -216,7 +216,7 @@ func bao_security_ecDecrypt(id *C.char, cipherData C.Data) C.Result {
 	data := C.GoBytes(cipherData.ptr, C.int(cipherData.len))
 	plainData, err := security.EcDecrypt(security.PrivateID(idStr), data)
 	if err != nil {
-		core.LogError("cannot decrypt ciphertext with provided private ID: %v", err)
+		core.LogError("cannot decrypt ciphertext with provided private ID", err)
 		core.End("failed for id len %d", len(idStr))
 		return cResult(nil, 0, err)
 	}
@@ -235,7 +235,7 @@ func bao_security_aesEncrypt(key *C.char, nonceData, plainData C.Data) C.Result 
 	data := C.GoBytes(plainData.ptr, C.int(plainData.len))
 	cipherText, err := security.AESEncrypt([]byte(keyStr), nonce, data)
 	if err != nil {
-		core.LogError("cannot encrypt plaintext with provided key (len %d) and nonce (%d bytes): %v", len(keyStr), len(nonce), err)
+		core.LogError("cannot encrypt plaintext with provided key (len %d) and nonce (%d bytes)", len(keyStr), len(nonce), err)
 		core.End("failed for key len %d", len(keyStr))
 		return cResult(nil, 0, err)
 	}
@@ -254,7 +254,7 @@ func bao_security_aesDecrypt(key *C.char, nonceData, cipherData C.Data) C.Result
 	data := C.GoBytes(cipherData.ptr, C.int(cipherData.len))
 	plainText, err := security.AESDecrypt([]byte(keyStr), nonce, data)
 	if err != nil {
-		core.LogError("cannot decrypt ciphertext with provided key (len %d) and nonce (%d bytes): %v", len(keyStr), len(nonce), err)
+		core.LogError("cannot decrypt ciphertext with provided key (len %d) and nonce (%d bytes)", len(keyStr), len(nonce), err)
 		core.End("failed for key len %d", len(keyStr))
 		return cResult(nil, 0, err)
 	}
@@ -262,16 +262,37 @@ func bao_security_aesDecrypt(key *C.char, nonceData, cipherData C.Data) C.Result
 	return cResult(plainText, 0, nil)
 }
 
-// bao_security_decodeID decodes the specified identity into the crypt key and the sign key.
+// bao_security_decodePublicID decodes the specified public identity into the crypt key and the sign key.
 //
-//export bao_security_decodeID
-func bao_security_decodeID(id *C.char) C.Result {
-	idStr := C.GoString(id)
-	core.Start("id len %d", len(idStr))
+//export bao_security_decodePublicID
+func bao_security_decodePublicID(idC *C.char) C.Result {
+	id := C.GoString(idC)
+	core.Start("id len %d", len(id))
 	core.TimeTrack()
-	cryptKey, signKey, err := security.DecodeID(idStr)
+	cryptKey, signKey, err := security.PublicID(id).Decode()
 	if err != nil {
-		core.LogError("cannot decode ID: %v", err)
+		core.LogError("cannot decode ID", err)
+		core.End("failed to decode ID")
+		return cResult(nil, 0, err)
+	}
+
+	cryptKey64 := base64.URLEncoding.EncodeToString(cryptKey)
+	signKey64 := base64.URLEncoding.EncodeToString(signKey)
+
+	core.End("decoded ID into key components")
+	return cResult(map[string]string{"cryptKey": cryptKey64, "signKey": signKey64}, 0, err)
+}
+
+// bao_security_decodePrivateID decodes the specified private identity into the crypt key and the sign key.
+//
+//export bao_security_decodePrivateID
+func bao_security_decodePrivateID(idC *C.char) C.Result {
+	id := C.GoString(idC)
+	core.Start("id len %d", len(id))
+	core.TimeTrack()
+	cryptKey, signKey, err := security.PrivateID(id).Decode()
+	if err != nil {
+		core.LogError("cannot decode ID", err)
 		core.End("failed to decode ID")
 		return cResult(nil, 0, err)
 	}
@@ -295,7 +316,7 @@ func bao_db_open(driverName, dataSourceName, ddl *C.char) C.Result {
 
 	db, err = sqlx.Open(C.GoString(driverName), C.GoString(dataSourceName), C.GoString(ddl))
 	if err != nil {
-		core.LogError("cannot open db with url %s: %v", C.GoString(dataSourceName), err)
+		core.LogError("cannot open db with url %s", C.GoString(dataSourceName), err)
 		return cResult(nil, 0, err)
 	}
 
@@ -311,7 +332,7 @@ func bao_db_close(dbH C.longlong) C.Result {
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 	d.Close()
@@ -328,7 +349,7 @@ func bao_db_query(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -337,7 +358,7 @@ func bao_db_query(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	var args map[string]any
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot unmarshal args %s: %v", C.GoString(argsC), err)
+		core.LogError("cannot unmarshal args %s", C.GoString(argsC), err)
 		return cResult(nil, 0, err)
 	}
 
@@ -354,14 +375,14 @@ func bao_db_exec(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 	query := C.GoString(queryC)
 	var args map[string]any
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot unmarshal args %s: %v", C.GoString(argsC), err)
+		core.LogError("cannot unmarshal args %s", C.GoString(argsC), err)
 		return cResult(nil, 0, err)
 	}
 
@@ -378,20 +399,20 @@ func bao_db_fetch(dbH C.longlong, queryC *C.char, argsC *C.char, maxRows C.int) 
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 	query := C.GoString(queryC)
 	var args map[string]any
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot unmarshal args %s: %v", C.GoString(argsC), err)
+		core.LogError("cannot unmarshal args %s", C.GoString(argsC), err)
 		return cResult(nil, 0, err)
 	}
 
 	rows, err := d.Fetch(query, args, int(maxRows))
 	if err != nil {
-		core.LogError("cannot fetch rows for query %s: %v", query, err)
+		core.LogError("cannot fetch rows for query %s", query, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("query %s", query)
@@ -406,19 +427,19 @@ func bao_db_fetch_one(dbH C.longlong, queryC *C.char, argsC *C.char) C.Result {
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 	query := C.GoString(queryC)
 	var args map[string]any
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot unmarshal args %s: %v", C.GoString(argsC), err)
+		core.LogError("cannot unmarshal args %s", C.GoString(argsC), err)
 		return cResult(nil, 0, err)
 	}
 	row, err := d.FetchOne(query, args)
 	if err != nil {
-		core.LogError("cannot fetch one row for query %s: %v", query, err)
+		core.LogError("cannot fetch one row for query %s", query, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("query %s", query)
@@ -434,13 +455,13 @@ func bao_store_open(configC *C.char) C.Result {
 	var storeConfig store.StoreConfig
 	err := cInput(nil, configC, &storeConfig)
 	if err != nil {
-		core.LogError("cannot unmarshal store config %s: %v", C.GoString(configC), err)
+		core.LogError("cannot unmarshal store config %s", C.GoString(configC), err)
 		return cResult(nil, 0, err)
 	}
 
 	store, err := store.Open(storeConfig)
 	if err != nil {
-		core.LogError("cannot open store %s: %v", storeConfig.Id, err)
+		core.LogError("cannot open store %s", storeConfig.Id, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -457,13 +478,13 @@ func bao_store_close(storeH C.longlong) C.Result {
 	core.TimeTrack()
 	s, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
 	err = s.Close()
 	if err != nil {
-		core.LogError("cannot close store with handle %d: %v", storeH, err)
+		core.LogError("cannot close store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -480,7 +501,7 @@ func bao_store_readDir(storeH C.longlong, dirC *C.char, filterC *C.char) C.Resul
 	core.TimeTrack()
 	s, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -489,13 +510,13 @@ func bao_store_readDir(storeH C.longlong, dirC *C.char, filterC *C.char) C.Resul
 	var filter store.Filter
 	err = cInput(err, filterC, &filter)
 	if err != nil {
-		core.LogError("cannot unmarshal filter %s: %v", C.GoString(filterC), err)
+		core.LogError("cannot unmarshal filter %s", C.GoString(filterC), err)
 		return cResult(nil, 0, err)
 	}
 
 	entries, err := s.ReadDir(dir, filter)
 	if err != nil {
-		core.LogError("cannot read dir %s from store with handle %d: %v", dir, storeH, err)
+		core.LogError("cannot read dir %s from store with handle %d", dir, storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -511,7 +532,7 @@ func bao_store_stat(storeH C.longlong, pathC *C.char) C.Result {
 	core.TimeTrack()
 	s, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -519,7 +540,7 @@ func bao_store_stat(storeH C.longlong, pathC *C.char) C.Result {
 
 	info, err := s.Stat(path)
 	if err != nil {
-		core.LogError("cannot stat path %s from store with handle %d: %v", path, storeH, err)
+		core.LogError("cannot stat path %s from store with handle %d", path, storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -535,7 +556,7 @@ func bao_store_delete(storeH C.longlong, pathC *C.char) C.Result {
 	core.TimeTrack()
 	s, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -543,7 +564,7 @@ func bao_store_delete(storeH C.longlong, pathC *C.char) C.Result {
 
 	err = s.Delete(path)
 	if err != nil {
-		core.LogError("cannot delete path %s from store with handle %d: %v", path, storeH, err)
+		core.LogError("cannot delete path %s from store with handle %d", path, storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -559,20 +580,20 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH)
 		return cResult(nil, 0, err)
 	}
 
 	store, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH)
 		return cResult(nil, 0, err)
 	}
 
 	var config vault.Config
 	err = cInput(err, configC, &config)
 	if err != nil {
-		core.LogError("cannot unmarshal settings %s: %v", C.GoString(configC), err)
+		core.LogError("cannot unmarshal settings %s", C.GoString(configC))
 		return cResult(nil, 0, err)
 	}
 
@@ -580,7 +601,7 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 	realm := C.GoString(realmC)
 	s, err := vault.Create(vault.Realm(realm), security.PrivateID(me), store, d, config)
 	if err != nil {
-		core.LogError("cannot create vault for store %s: %v", store.ID(), err)
+		core.LogError("cannot create vault for store %s", store.ID(), err)
 		return cResult(nil, 0, err)
 	}
 
@@ -591,19 +612,19 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 // bao_vault_open opens an existing vault with the specified identity, author and URL. The function returns a handle to the bao.
 //
 //export bao_vault_open
-func bao_vault_open(realmC *C.char, meC *C.char, dbH C.longlong, storeH C.longlong, configC *C.char, authorC *C.char) C.Result {
+func bao_vault_open(realmC *C.char, meC *C.char, authorC *C.char, storeH C.longlong, dbH C.longlong) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 
 	d, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 
 	store, err := stores.Get(int64(storeH))
 	if err != nil {
-		core.LogError("cannot get store with handle %d: %v", storeH, err)
+		core.LogError("cannot get store with handle %d", storeH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -612,7 +633,7 @@ func bao_vault_open(realmC *C.char, meC *C.char, dbH C.longlong, storeH C.longlo
 	realm := C.GoString(realmC)
 	s, err := vault.Open(vault.Realm(realm), security.PrivateID(me), security.PublicID(author), store, d)
 	if err != nil {
-		core.LogError("cannot open vault for store %s: %v", store.ID(), err)
+		core.LogError("cannot open vault for store %s", store.ID(), err)
 		return cResult(nil, 0, err)
 	}
 
@@ -628,7 +649,7 @@ func bao_vault_close(sH C.longlong) C.Result {
 	core.TimeTrack()
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -646,20 +667,20 @@ func bao_vault_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Res
 	core.TimeTrack()
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	var changes []vault.AccessChange
 	changesJSON := C.GoString(changesC)
 	if err := json.Unmarshal([]byte(changesJSON), &changes); err != nil {
-		core.LogError("cannot unmarshal access change payload: %v", err)
+		core.LogError("cannot unmarshal access change payload", err)
 		return cResult(nil, 0, err)
 	}
 
 	err = s.SyncAccess(vault.IOOption(optionsC), changes...)
 	if err != nil {
-		core.LogError("cannot synchronize access changes: %v", err)
+		core.LogError("cannot synchronize access changes", err)
 		return cResult(nil, 0, err)
 	}
 	core.End("handled %d access changes", len(changes))
@@ -674,13 +695,13 @@ func bao_vault_getAccesses(vH C.longlong) C.Result {
 	core.TimeTrack()
 	v, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", vH, err)
+		core.LogError("cannot get vault with handle %d", vH, err)
 		return cResult(nil, 0, err)
 	}
 
 	a, err := v.GetAccesses()
 	if err != nil {
-		core.LogError("cannot get access for vault: %v", err)
+		core.LogError("cannot get access for vault", err)
 		return cResult(nil, 0, err)
 	}
 	core.End("vault access retrieved")
@@ -695,14 +716,14 @@ func bao_vault_getAccess(vH C.longlong, userC *C.char) C.Result {
 	core.TimeTrack()
 	v, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", vH, err)
+		core.LogError("cannot get vault with handle %d", vH, err)
 		return cResult(nil, 0, err)
 	}
 
 	user := C.GoString(userC)
 	access, err := v.GetAccess(security.PublicID(user))
 	if err != nil {
-		core.LogError("cannot get access for user %s in vault: %v", user, err)
+		core.LogError("cannot get access for user %s in vault", user, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("vault access retrieved for user %s", user)
@@ -719,13 +740,13 @@ func bao_vault_sync(vH C.longlong) C.Result {
 	core.Start("handle %d", vH)
 	s, err := vaults.Get(int64(vH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", vH, err)
+		core.LogError("cannot get vault with handle %d", vH, err)
 		return cResult(nil, 0, err)
 	}
 
 	files, err := s.Sync()
 	if err != nil {
-		core.LogError("cannot synchronize groups %v in vault %d: %v", groups, vH, err)
+		core.LogError("cannot synchronize groups %v in vault %d", groups, vH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -749,14 +770,14 @@ func bao_vault_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 	if fileIdsC != nil {
 		err = cInput(err, fileIdsC, &fileIds)
 		if err != nil {
-			logrus.Errorf("cannot unmarshal file IDs %s: %v", C.GoString(fileIdsC), err)
+			logrus.Errorf("cannot unmarshal file IDs %s", C.GoString(fileIdsC), err)
 			return cResult(nil, 0, err)
 		}
 	}
 
 	err = s.WaitFiles(fileIds...)
 	if err != nil {
-		logrus.Errorf("cannot synchronize vault %d: %v", sH, err)
+		logrus.Errorf("cannot synchronize vault %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -772,7 +793,7 @@ func bao_vault_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char)
 	core.Start("handle %d", sH)
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -781,7 +802,7 @@ func bao_vault_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char)
 
 	err = s.SetAttribute(vault.IOOption(options), name, value)
 	if err != nil {
-		core.LogError("cannot set attribute %s to %s in vault %d: %v", name, value, sH, err)
+		core.LogError("cannot set attribute %s to %s in vault %d", name, value, sH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("set attribute %s to %s in vault %d", name, value, sH)
@@ -796,7 +817,7 @@ func bao_vault_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 	core.Start("called with sH: %d, name: %s, author: %s", sH, C.GoString(nameC), C.GoString(authorC))
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -806,10 +827,10 @@ func bao_vault_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 
 	value, err := s.GetAttribute(name, security.PublicID(author))
 	if err != nil {
-		core.LogError("cannot get attribute '%s' for provided user (len %d) in vault %d: %v", name, authorLen, sH, err)
+		core.LogError("cannot get attribute '%s' for provided user (len %d) in vault %d", name, authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attribute '%s' for user len %d in vault %d: %s", name, authorLen, sH, value)
+	core.End("got attribute '%s' for user len %d in vault %d", name, authorLen, sH, value)
 	return cResult(value, 0, nil)
 }
 
@@ -821,7 +842,7 @@ func bao_vault_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 	core.Start("handle %d", sH)
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -830,10 +851,10 @@ func bao_vault_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 
 	attrs, err := s.GetAttributes(security.PublicID(author))
 	if err != nil {
-		core.LogError("cannot get attributes for provided user (len %d) in vault %d: %v", authorLen, sH, err)
+		core.LogError("cannot get attributes for provided user (len %d) in vault %d", authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attributes for user len %d in vault %d: %v", authorLen, sH, attrs)
+	core.End("got attributes for user len %d in vault %d", authorLen, sH, attrs)
 	return cResult(attrs, 0, nil)
 }
 
@@ -871,10 +892,10 @@ func bao_vault_stat(sH C.longlong, name *C.char) C.Result {
 		return cResult(nil, 0, err)
 	}
 	if err != nil {
-		core.LogError("cannot get file info for %s in vault %d: %v", C.GoString(name), sH, err)
+		core.LogError("cannot get file info for %s in vault %d", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("successful statistic for file %s in vault %d: %v", C.GoString(name), sH, info)
+	core.End("successful statistic for file %s in vault %d", C.GoString(name), sH, info)
 	return cResult(info, 0, err)
 }
 
@@ -890,7 +911,7 @@ func bao_vault_getGroup(sH C.longlong, name *C.char) C.Result {
 	}
 
 	group, err := s.GetGroup(C.GoString(name))
-	core.End("successful group retrieval for file %s in vault %d: %v", C.GoString(name), sH, group)
+	core.End("successful group retrieval for file %s in vault %d", C.GoString(name), sH, group)
 	return cResult(group, 0, err)
 }
 
@@ -908,7 +929,7 @@ func bao_vault_getAuthor(sH C.longlong, name *C.char) C.Result {
 	}
 
 	author, err := s.GetAuthor(C.GoString(name))
-	core.End("successful author retrieval for file %s in vault %d: %v", C.GoString(name), sH, author)
+	core.End("successful author retrieval for file %s in vault %d", C.GoString(name), sH, author)
 	return cResult(author, 0, err)
 }
 
@@ -926,7 +947,7 @@ func bao_vault_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Re
 	dest := C.GoString(destC)
 	file, err := s.Read(C.GoString(name), dest, vault.IOOption(options), nil)
 	if err != nil {
-		core.LogError("cannot read file %s from vault %d: %v", C.GoString(name), sH, err)
+		core.LogError("cannot read file %s from vault %d", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -969,19 +990,42 @@ func bao_vault_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(nameC))
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	name := C.GoString(nameC)
 	err = s.Delete(name, vault.IOOption(options))
 	if err != nil {
-		core.LogError("cannot delete file %s from vault %d: %v", name, sH, err)
+		core.LogError("cannot delete file %s from vault %d", name, sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	core.End("successfully deleted file %s from vault %d", name, sH)
 	return cResult(nil, 0, nil)
+}
+
+// bao_vault_versions returns the versions of the specified file in the bao.
+//
+//export bao_vault_versions
+func bao_vault_versions(sH C.longlong, nameC *C.char) C.Result {
+	core.TimeTrack()
+	core.Start("called with sH: %d, name: %s", sH, C.GoString(nameC))
+	s, err := vaults.Get(int64(sH))
+	if err != nil {
+		core.LogError("cannot get vault with handle %d", sH, err)
+		return cResult(nil, 0, err)
+	}
+
+	name := C.GoString(nameC)
+	versions, err := s.Versions(name)
+	if err != nil {
+		core.LogError("cannot get versions for file %s in vault %d", name, sH, err)
+		return cResult(nil, 0, err)
+	}
+
+	core.End("retrieved %d versions for file %s in vault %d", len(versions), name, sH)
+	return cResult(versions, 0, nil)
 }
 
 // bao_vault_allocatedSize returns the allocated size of the specified bao.
@@ -992,7 +1036,7 @@ func bao_vault_allocatedSize(sH C.longlong) C.Result {
 	core.Start("called with sH: %d", sH)
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -1009,19 +1053,19 @@ func bao_replica_open(sH C.longlong, dbH C.int) C.Result {
 	core.Start("called with sH: %d, dbH: %d", sH, dbH)
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	db, err := dbs.Get(int64(dbH))
 	if err != nil {
-		core.LogError("cannot get db with handle %d: %v", dbH, err)
+		core.LogError("cannot get db with handle %d", dbH, err)
 		return cResult(nil, 0, err)
 	}
 
 	dt, err := replica.Open(s, db)
 	if err != nil {
-		core.LogError("cannot create sql layer for vault %d: %v", sH, err)
+		core.LogError("cannot create sql layer for vault %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("sql layer for vault %d created", sH)
@@ -1039,20 +1083,20 @@ func bao_replica_exec(dtH C.longlong, keyC, argsC *C.char) C.Result {
 
 	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
-		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
+		core.LogError("cannot get sql layer %d for query %s", dtH, key, err)
 		return cResult(nil, 0, err)
 	}
 
 	var args sqlx.Args
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot convert input for query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot convert input for query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 
 	_, err = dt.Exec(C.GoString(keyC), args)
 	if err != nil {
-		core.LogError("cannot execute query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot execute query %s with args %v", key, map[string]any(args), err)
 	}
 	core.End("")
 	return cResult(nil, 0, err)
@@ -1068,20 +1112,20 @@ func bao_replica_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
 	core.Start("called with dtH: %d, key: %s", dtH, key)
 	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
-		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
+		core.LogError("cannot get sql layer %d for query %s", dtH, key, err)
 		return cResult(nil, 0, err)
 	}
 
 	var args sqlx.Args
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot convert input for query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot convert input for query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 
 	rows_, err := dt.Query(key, args)
 	if err != nil {
-		core.LogError("cannot execute query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot execute query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("")
@@ -1096,13 +1140,13 @@ func bao_replica_sync(dtH C.longlong) C.Result {
 	core.Start("")
 	replica, err := replicas.Get(int64(dtH))
 	if err != nil {
-		core.LogError("cannot get sql layer %d: %v", dtH, err)
+		core.LogError("cannot get sql layer %d", dtH, err)
 		return cResult(nil, 0, err)
 	}
 
 	updates, err := replica.Sync()
 	if err != nil {
-		core.LogError("cannot synchronize tables in sql layer %d: %v", dtH, err)
+		core.LogError("cannot synchronize tables in sql layer %d", dtH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("")
@@ -1119,20 +1163,20 @@ func bao_replica_fetch(dtH C.longlong, keyC, argsC *C.char, maxRows C.int) C.Res
 	core.Start("key: %s", key)
 	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
-		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
+		core.LogError("cannot get sql layer %d for query %s", dtH, key, err)
 		return cResult(nil, 0, err)
 	}
 
 	var args sqlx.Args
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot convert input for query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot convert input for query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 
 	rows_, err := dt.Fetch(key, args, int(maxRows))
 	if err != nil {
-		core.LogError("cannot execute query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot execute query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("")
@@ -1149,20 +1193,20 @@ func bao_replica_fetchOne(dtH C.longlong, keyC, argsC *C.char) C.Result {
 
 	dt, err := replicas.Get(int64(dtH))
 	if err != nil {
-		core.LogError("cannot get sql layer %d for query %s: %v", dtH, key, err)
+		core.LogError("cannot get sql layer %d for query %s", dtH, key, err)
 		return cResult(nil, 0, err)
 	}
 
 	var args sqlx.Args
 	err = cInput(err, argsC, &args)
 	if err != nil {
-		core.LogError("cannot convert input for query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot convert input for query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 
 	values, err := dt.FetchOne(key, args)
 	if err != nil {
-		core.LogError("cannot execute query %s with args %v: %v", key, map[string]any(args), err)
+		core.LogError("cannot execute query %s with args %v", key, map[string]any(args), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("")
@@ -1178,13 +1222,13 @@ func bao_replica_current(rowsH C.longlong) C.Result {
 	core.Start("rowsH: %d", rowsH)
 	r, err := rows.Get(int64(rowsH))
 	if err != nil {
-		core.LogError("cannot get rows with handle %d: %v", rowsH, err)
+		core.LogError("cannot get rows with handle %d", rowsH, err)
 		return cResult(nil, 0, err)
 	}
 
 	values, err := r.Current()
 	if err != nil {
-		core.LogError("cannot get current row from rows %d: %v", rowsH, err)
+		core.LogError("cannot get current row from rows %d", rowsH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("%d values", len(values))
@@ -1200,7 +1244,7 @@ func bao_replica_next(rowsH C.longlong) C.Result {
 	core.Start("rowsH: %d", rowsH)
 	r, err := rows.Get(int64(rowsH))
 	if err != nil {
-		core.LogError("cannot get rows with handle %d: %v", rowsH, err)
+		core.LogError("cannot get rows with handle %d", rowsH, err)
 		return cResult(nil, 0, err)
 	}
 
@@ -1217,13 +1261,13 @@ func bao_replica_closeRows(rowsH C.longlong) C.Result {
 	core.Start("called with rowsH: %d", rowsH)
 	r, err := rows.Get(int64(rowsH))
 	if err != nil {
-		core.LogError("cannot get rows with handle %d: %v", rowsH, err)
+		core.LogError("cannot get rows with handle %d", rowsH, err)
 		return cResult(nil, 0, err)
 	}
 
 	err = r.Close()
 	if err != nil {
-		core.LogError("cannot close rows with handle %d: %v", rowsH, err)
+		core.LogError("cannot close rows with handle %d", rowsH, err)
 		return cResult(nil, 0, err)
 	}
 	rows.Remove(int64(rowsH))
@@ -1246,7 +1290,7 @@ func bao_replica_cancel(dtH C.longlong) C.Result {
 
 	err = dt.Cancel()
 	if err != nil {
-		core.LogError("cannot cancel sql layer %d: %v", dtH, err)
+		core.LogError("cannot cancel sql layer %d", dtH, err)
 	}
 	core.End("successfully cancelled sql layer %d", dtH)
 	return cResult(nil, 0, err)
@@ -1260,20 +1304,20 @@ func bao_mailbox_send(sH C.longlong, dir, message *C.char) C.Result {
 	core.Start("called with sH: %d, dir: %s, message: %s", sH, C.GoString(dir), C.GoString(message))
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
-		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		core.LogError("cannot get vault with handle %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 
 	var m mailbox.Message
 	err = cInput(err, message, &m)
 	if err != nil {
-		core.LogError("cannot unmarshal message %s: %v", C.GoString(message), err)
+		core.LogError("cannot unmarshal message %s", C.GoString(message), err)
 		return cResult(nil, 0, err)
 	}
 
 	err = mailbox.Send(s, C.GoString(dir), m)
 	if err != nil {
-		core.LogError("cannot send message %s: %v", C.GoString(message), err)
+		core.LogError("cannot send message %s", C.GoString(message), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("successfully sent message %s", C.GoString(message))
@@ -1295,7 +1339,7 @@ func bao_mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C
 
 	msgs, err := mailbox.Receive(s, C.GoString(dir), time.UnixMilli(int64(since)), int64(fromId))
 	if err != nil {
-		core.LogError("cannot receive messages from vault %d: %v", sH, err)
+		core.LogError("cannot receive messages from vault %d", sH, err)
 		return cResult(nil, 0, err)
 	}
 	core.End("successfully received messages from vault %d: %v", sH, msgs)
@@ -1318,13 +1362,13 @@ func bao_mailbox_download(sH C.longlong, dir, message *C.char, attachment C.int,
 	var m mailbox.Message
 	err = cInput(err, message, &m)
 	if err != nil {
-		core.LogError("cannot unmarshal message %s: %v", C.GoString(message), err)
+		core.LogError("cannot unmarshal message %s", C.GoString(message), err)
 		return cResult(nil, 0, err)
 	}
 
 	err = mailbox.Download(s, C.GoString(dir), m, int(attachment), C.GoString(dest))
 	if err != nil {
-		core.LogError("cannot download attachment %d from message %s to %s: %v", attachment, C.GoString(message), C.GoString(dest), err)
+		core.LogError("cannot download attachment %d from message %s to %s", attachment, C.GoString(message), C.GoString(dest), err)
 		return cResult(nil, 0, err)
 	}
 	core.End("successfully downloaded attachment %d from message %s to %s", attachment, C.GoString(message), C.GoString(dest))

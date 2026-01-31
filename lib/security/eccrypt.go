@@ -8,24 +8,24 @@ import (
 )
 
 func EcEncrypt(publicID PublicID, data []byte) ([]byte, error) {
-	cryptKey, _, err := DecodeID(publicID.String())
+	cryptKey, _, err := publicID.Decode()
 	if err != nil {
-		return nil, core.Errorw("cannot decode keys", err)
+		return nil, core.Error(core.ParseError, "cannot decode keys", err)
 	}
 
 	pk, err := eciesgo.NewPublicKeyFromBytes(cryptKey)
 	if err != nil {
-		return nil, core.Errorw("cannot convert bytes to secp256k1 public key", err)
+		return nil, core.Error(core.GenericError, "cannot convert bytes to secp256k1 public key", err)
 	}
 	data, err = eciesgo.Encrypt(pk, data)
 	if err != nil {
-		return nil, core.Errorw("cannot encrypt with secp256k1", err)
+		return nil, core.Error(core.EncodeError, "cannot encrypt with secp256k1", err)
 	}
 	return data, err
 }
 
 func EcDecrypt(privateID PrivateID, data []byte) ([]byte, error) {
-	cryptKey, _, err := DecodeID(privateID.String())
+	cryptKey, _, err := privateID.Decode()
 	if core.IsWarn(err, "cannot decode keys: %v") {
 		return nil, err
 	}

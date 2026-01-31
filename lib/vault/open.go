@@ -22,12 +22,12 @@ func Open(realm Realm, userPrivateID security.PrivateID, author security.PublicI
 	core.Start("opening vault with store URL %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
-		return nil, core.Errorw("Cannot define SQLite db in %s", db.DbPath, err)
+		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", db.DbPath, err)
 	}
 
 	userID, err := userPrivateID.PublicID()
 	if err != nil {
-		return nil, core.Errorw("cannot get public ID from private ID %s", userPrivateID, err)
+		return nil, core.Error(core.DbError, "cannot get public ID from private ID %s", userPrivateID, err)
 	}
 
 	var config Config
@@ -36,7 +36,7 @@ func Open(realm Realm, userPrivateID security.PrivateID, author security.PublicI
 	if b != nil {
 		err := msgpack.Unmarshal(b, &config)
 		if err != nil {
-			return nil, core.Errorw("cannot unmarshal config for vault %s", id, err)
+			return nil, core.Error(core.ParseError, "cannot unmarshal config for vault %s", id, err)
 		}
 	}
 
@@ -60,25 +60,25 @@ func Open(realm Realm, userPrivateID security.PrivateID, author security.PublicI
 	}
 	allocatedSize, err := v.calculateAllocatedSize()
 	if err != nil {
-		return nil, core.Errorw("cannot calculate allocated size for vault %s", id, err)
+		return nil, core.Error(core.GenericError, "cannot calculate allocated size for vault %s", id, err)
 	}
 	v.allocatedSize = allocatedSize
 
 	access, err := v.GetAccess(v.UserPublicID)
 	if err != nil {
-		return nil, core.Errorw("cannot get access for user %s in vault %s", v.UserPublicID, id, err)
+		return nil, core.Error(core.DbError, "cannot get access for user %s in vault %s", v.UserPublicID, id, err)
 	}
 	if access == 0 {
 		err := v.syncBlockChain()
 		if err != nil {
-			return nil, core.Errorw("cannot perform initial user synchronization for vault %s", id, err)
+			return nil, core.Error(core.GenericError, "cannot perform initial user synchronization for vault %s", id, err)
 		}
 		access, err = v.GetAccess(v.UserPublicID)
 		if err != nil {
-			return nil, core.Errorw("Cannot get access for user %s in vault %s", v.UserPublicID, id, err)
+			return nil, core.Error(core.DbError, "Cannot get access for user %s in vault %s", v.UserPublicID, id, err)
 		}
 		if access == 0 {
-			return nil, core.Errorw("Access Denied: user %s, vault %s", v.UserPublicID, id)
+			return nil, core.Error(core.AuthError, "Access Denied: user %s, vault %s", v.UserPublicID, id)
 		}
 	} else {
 		defer v.syncBlockChain()

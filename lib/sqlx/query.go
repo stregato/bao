@@ -89,14 +89,14 @@ func (db *DB) Exec(key string, m Args) (Result, error) {
 	// }
 	sql, err := db.getQuery(key, m)
 	if err != nil {
-		return nil, core.Errorw("cannot get query for key %s", key, err)
+		return nil, core.Error(core.DbError, "cannot get query for key %s", key, err)
 	}
 
 	res, err := db.Engine.Exec(sql, args...)
 	//	res, err := stmt.Exec(args...)
 	db.trace(key, m, err)
 	if err != nil {
-		return nil, core.Errorw("cannot execute query", err)
+		return nil, core.Error(core.DbError, "cannot execute query", err)
 	}
 
 	res.RowsAffected()
@@ -133,7 +133,7 @@ func (db *DB) QueryRow(key string, m Args, dest ...any) error {
 	err = row.Err()
 	db.trace(key, m, err)
 	if err != s.ErrNoRows && err != nil {
-		return core.Errorw("cannot execute query", err)
+		return core.Error(core.DbError, "cannot execute query", err)
 	}
 
 	return scanRow(row, dest...)
@@ -148,24 +148,24 @@ func (db *DB) Query(key string, m Args) (RowsX, error) {
 	core.Trace("executing query %s with args %v", key, m)
 	args, err := convert(m)
 	if err != nil {
-		return RowsX{}, core.Errorw("cannot convert args", err)
+		return RowsX{}, core.Error(core.GenericError, "cannot convert args", err)
 	}
 
 	stmt, err := db.getStatement(key, m)
 	if err != nil {
-		return RowsX{}, core.Errorw("cannot get statement for query %s", key, err)
+		return RowsX{}, core.Error(core.DbError, "cannot get statement for query %s", key, err)
 	}
 
 	rows, err := stmt.Query(args...)
 	if err != nil {
-		return RowsX{}, core.Errorw("cannot execute query %s", key, err)
+		return RowsX{}, core.Error(core.DbError, "cannot execute query %s", key, err)
 	}
 	db.trace(key, m, err)
 
 	columnsType, err := rows.ColumnTypes()
 	if err != nil {
 		rows.Close()
-		return RowsX{}, core.Errorw("cannot get column types for query %s", key, err)
+		return RowsX{}, core.Error(core.DbError, "cannot get column types for query %s", key, err)
 	}
 	core.Trace("successfully query: %s, args %v", key, m)
 	return RowsX{rows: rows, columnTypes: columnsType}, err
@@ -174,7 +174,7 @@ func (db *DB) Query(key string, m Args) (RowsX, error) {
 func (db *DB) Fetch(key string, m Args, max int) ([][]any, error) {
 	rw, err := db.Query(key, m)
 	if err != nil {
-		return nil, core.Errorw("cannot execute query %s", key, err)
+		return nil, core.Error(core.DbError, "cannot execute query %s", key, err)
 	}
 	defer rw.Close()
 
@@ -182,7 +182,7 @@ func (db *DB) Fetch(key string, m Args, max int) ([][]any, error) {
 	for i := 0; i < max && rw.Next(); i++ {
 		row, err := rw.Current()
 		if err != nil {
-			return nil, core.Errorw("cannot fetch row %d for query %s", i, key, err)
+			return nil, core.Error(core.DbError, "cannot fetch row %d for query %s", i, key, err)
 		}
 		results = append(results, row)
 	}
@@ -193,7 +193,7 @@ func (db *DB) Fetch(key string, m Args, max int) ([][]any, error) {
 func (db *DB) FetchOne(key string, m Args) ([]any, error) {
 	rw, err := db.Query(key, m)
 	if err != nil {
-		return nil, core.Errorw("cannot execute query %s", key, err)
+		return nil, core.Error(core.DbError, "cannot execute query %s", key, err)
 	}
 	defer rw.Close()
 
@@ -202,7 +202,7 @@ func (db *DB) FetchOne(key string, m Args) ([]any, error) {
 	}
 	row, err := rw.Current()
 	if err != nil {
-		return nil, core.Errorw("cannot fetch one row for query %s", key, err)
+		return nil, core.Error(core.DbError, "cannot fetch one row for query %s", key, err)
 	}
 
 	return row, nil
@@ -293,7 +293,7 @@ func (rw *RowsX) Scan(dest ...interface{}) (err error) {
 
 	err = rw.rows.Scan(dest...)
 	if err != nil {
-		return core.Errorw("cannot scan row", err)
+		return core.Error(core.GenericError, "cannot scan row", err)
 	}
 	return nil
 }
@@ -364,7 +364,7 @@ func (rw *RowsX) Next() bool {
 // If there are no rows, it returns nil and an error indicating that there are no rows to read.
 func (rw *RowsX) Current() ([]any, error) {
 	if rw.rows == nil {
-		return nil, core.Errorw("no rows to read")
+		return nil, core.Error(core.DbError, "no rows to read")
 	}
 
 	values := make([]any, len(rw.columnTypes))
@@ -376,7 +376,7 @@ func (rw *RowsX) Current() ([]any, error) {
 
 	err := rw.Scan(valuePtrs...)
 	if err != nil {
-		return nil, core.Errorw("cannot scan current row", err)
+		return nil, core.Error(core.GenericError, "cannot scan current row", err)
 	}
 
 	core.Trace("values %v", values)
@@ -404,7 +404,7 @@ func (rw *RowsX) Fetch(max int) ([][]any, error) {
 	for i := 0; i < max && rw.Next(); i++ {
 		row, err := rw.Current()
 		if err != nil {
-			return nil, core.Errorw("cannot fetch current row", err)
+			return nil, core.Error(core.GenericError, "cannot fetch current row", err)
 		}
 		rows = append(rows, row)
 	}

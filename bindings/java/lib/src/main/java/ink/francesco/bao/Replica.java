@@ -4,13 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Iterator;
 import java.util.Map;
 
-public class SqlLayer {
+public class Replica {
 
     private final long hnd;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    protected SqlLayer(long hnd) {
-        this.hnd = hnd;
+    public Replica(Vault vault, DB db) throws Exception {
+        Result r = BaoLibrary.instance.bao_replica_open(vault.hnd, (int) db.hnd);
+        r.check();
+        this.hnd = r.hnd;
     }
 
     public Map<String, Object> exec(String sql, Map<String, Object> args) throws Exception {

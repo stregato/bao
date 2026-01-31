@@ -58,11 +58,11 @@ func ReadMsgPack(s Store, name string, v any) error {
 		return err
 	}
 	if err != nil {
-		return core.Errorw("msgpackErr: cannot read file %s from store %s", name, s, err)
+		return core.Error(core.FileError, "msgpackErr: cannot read file %s from store %s", name, s, err)
 	}
 	err = msgpack.Unmarshal(data, v)
 	if err != nil {
-		return core.Errorw("msgpackErr: cannot unmarshal msgpack file %s from store %s ", name, s, err)
+		return core.Error(core.FileError, "msgpackErr: cannot unmarshal msgpack file %s from store %s ", name, s, err)
 	}
 
 	return err
@@ -71,11 +71,11 @@ func ReadMsgPack(s Store, name string, v any) error {
 func WriteMsgPack(s Store, name string, v any) error {
 	b, err := msgpack.Marshal(v)
 	if err != nil {
-		return core.Errorw("msgpackErr: cannot marshal in store %s msgpack file %s", s, name, err)
+		return core.Error(core.FileError, "msgpackErr: cannot marshal in store %s msgpack file %s", s, name, err)
 	}
 	err = s.Write(name, core.NewBytesReader(b), nil)
 	if err != nil {
-		return core.Errorw("msgpackErr: cannot write file %s into store %s", name, s, err)
+		return core.Error(core.FileError, "msgpackErr: cannot write file %s into store %s", name, s, err)
 	}
 	return nil
 }
@@ -108,7 +108,7 @@ const maxSizeForMemoryCopy = 1024 * 1024
 func CopyFile(dest Store, destName string, source Store, sourceName string) error {
 	stat, err := source.Stat(sourceName)
 	if err != nil {
-		return core.Errorw("cannot stat %s/%s", source, sourceName, err)
+		return core.Error(core.GenericError, "cannot stat %s/%s", source, sourceName, err)
 	}
 
 	var r io.ReadSeeker
@@ -116,18 +116,18 @@ func CopyFile(dest Store, destName string, source Store, sourceName string) erro
 		buf := bytes.Buffer{}
 		err = source.Read(sourceName, nil, &buf, nil)
 		if err != nil {
-			return core.Errorw("cannot read %s/%s", source, sourceName, err)
+			return core.Error(core.GenericError, "cannot read %s/%s", source, sourceName, err)
 		}
 		r = core.NewBytesReader(buf.Bytes())
 	} else {
 		file, err := os.CreateTemp("", "woland")
 		if err != nil {
-			return core.Errorw("cannot create temporary file for CopyFile", err)
+			return core.Error(core.FileError, "cannot create temporary file for CopyFile", err)
 		}
 
 		err = source.Read(sourceName, nil, file, nil)
 		if err != nil {
-			return core.Errorw("cannot read %s/%s", source, sourceName, err)
+			return core.Error(core.GenericError, "cannot read %s/%s", source, sourceName, err)
 		}
 		file.Seek(0, 0)
 		r = file
@@ -140,7 +140,7 @@ func CopyFile(dest Store, destName string, source Store, sourceName string) erro
 	err = dest.Write(destName, r, nil)
 	if err != nil {
 		dest.Delete(destName)
-		return core.Errorw("cannot write %s/%s", dest, destName, err)
+		return core.Error(core.GenericError, "cannot write %s/%s", dest, destName, err)
 	}
 
 	return nil
