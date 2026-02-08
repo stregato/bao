@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -18,14 +19,18 @@ import (
 var ddl1_0 string
 
 // Create creates a new Bao instance.
-func Create(realm Realm, userPrivateID security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*Vault, error) {
+func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*Vault, error) {
 	core.Start("creating vault for url %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
 		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", db.DbPath, err)
 	}
 
-	userID, err := userPrivateID.PublicID()
+	if config.SyncRelay != "" && !strings.HasPrefix(config.SyncRelay, "ws") {
+		return nil, core.Error(core.ConfigError, "Invalid watch service URL %s, must start with ws:// or wss://", config.SyncRelay)
+	}
+
+	userID, err := userSecret.PublicID()
 	if err != nil {
 		return nil, core.Error(core.GenericError, "invalid private while creating vault for url %s", store.ID(), err)
 	}
@@ -37,17 +42,17 @@ func Create(realm Realm, userPrivateID security.PrivateID, store store.Store, db
 	userIDHash := core.Int64Hash(userID.Bytes())
 	ioThrottle := core.DefaultIfZero(config.IoThrottle, 10) // Default to 10 concurrent I/O operations
 
-	id := fmt.Sprintf("%s|%s", store.ID(), realm.String())
-	s := Vault{
-		ID:               id,
-		Realm:            realm,
-		UserID:           userPrivateID,
-		UserPublicID:     userID,
-		UserPublicIDHash: userIDHash,
-		Author:           userID,
-		DB:               db,
-		Config:           config,
-		store:            store,
+	id := fmt.Sprintf("%s@%s", realm.String(), store.ID())
+	v := Vault{
+		ID:         id,
+		Realm:      realm,
+		UserSecret: userSecret,
+		UserID:     userID,
+		UserIDHash: userIDHash,
+		Author:     userID,
+		DB:         db,
+		Config:     config,
+		store:      store,
 		//		lastChangeScheduledFolders: make(map[string]bool),
 		lastCleanupAt: time.Now(),
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
@@ -58,22 +63,22 @@ func Create(realm Realm, userPrivateID security.PrivateID, store store.Store, db
 	if err != nil {
 		return nil, core.Error(core.ParseError, "cannot marshal config change for vault %s", id, err)
 	}
-	err = s.stageBlockChange(bc)
+	err = v.stageBlockChange(bc)
 	if err != nil {
 		return nil, core.Error(core.ConfigError, "cannot stage config change for vault %s", id, err)
 	}
-	err = s.SyncAccess(0, AccessChange{userID, ReadWriteAdmin})
+	err = v.SyncAccess(0, AccessChange{userID, ReadWriteAdmin})
 	if err != nil {
 		return nil, core.Error(core.DbError, "cannot set access for vault %s", id, err)
 	}
 
-	go s.startHousekeeping()
+	v.startHousekeeping()
 	openedStashesMu.Lock()
-	openedStashes = append(openedStashes, &s)
+	openedStashes = append(openedStashes, &v)
 	openedStashesMu.Unlock()
 
 	core.Info("Successfully created vault %s", id)
-	return &s, nil
+	return &v, nil
 }
 
 // wipe deletes all data from the store recursively.

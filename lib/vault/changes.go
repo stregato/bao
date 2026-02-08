@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/stregato/bao/lib/core"
@@ -43,8 +44,19 @@ type ChangeAccess struct {
 	PublicID security.PublicID `json:"publicId"` // User public ID whose access is being changed
 }
 
-func (c Config) Apply(s *Vault, author security.PublicID) error {
+func (c Config) Apply(v *Vault, author security.PublicID) error {
 	core.Start("applying Config by author %s", author)
+	data, err := msgpack.Marshal(c)
+	if err != nil {
+		return core.Error(core.ParseError, "cannot marshal config change for vault %s", v.ID, err)
+	}
+	err = v.DB.SetSetting(path.Join("/bao/config/", v.ID), "", 0, 0, data)
+	if err != nil {
+		return core.Error(core.DbError, "cannot save config change for vault %s", v.ID, err)
+	}
+	v.Config = c
+	v.startSyncRelay()
+	core.End("applied config change for vault %s: %s", v.ID, c.String())
 	return nil
 }
 
@@ -196,9 +208,9 @@ func (v *Vault) addKey(keyId uint64, key []byte) error {
 		core.End("key ID is zero, no key to add")
 		return nil
 	}
-	key, err := security.EcDecrypt(v.UserID, key)
+	key, err := security.EcDecrypt(v.UserSecret, key)
 	if err != nil {
-		return core.Error(core.EncodeError, "cannot decrypt key. My id is %s", v.UserPublicID, err)
+		return core.Error(core.EncodeError, "cannot decrypt key. My id is %s", v.UserSecret, err)
 	}
 	err = v.setKeyToDB(keyId, key)
 	if err != nil {
@@ -218,7 +230,7 @@ func (a *AddKey) Apply(v *Vault, author security.PublicID) error {
 	var foundKeyForMe bool
 	if access&Admin != 0 {
 		for publicId, encodedKey := range a.EncryptedKeys {
-			if publicId == v.UserPublicID {
+			if publicId == v.UserID {
 				err = v.addKey(a.KeyId, encodedKey)
 				if err != nil {
 					return core.Error(core.GenericError, "cannot add key %d in vault %s", a.KeyId, v.ID, err)
@@ -244,7 +256,7 @@ func (a *AddKey) String() string {
 func (a *ActiveKeySet) Apply(v *Vault, author security.PublicID) error {
 	core.Start("handling ActiveKeySet by author %s", author)
 
-	if a.Id != v.UserPublicID {
+	if a.Id != v.UserID {
 		core.End("%d keys, not for me", len(a.Keys))
 		return nil // Not for me
 	}
@@ -290,7 +302,7 @@ func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 			if err != nil {
 				return core.Error(core.FileError, "cannot remove user %s from vault %s", c.PublicID, v.ID, err)
 			}
-			if v.UserPublicID == c.PublicID {
+			if v.UserID == c.PublicID {
 				core.Info("my access to vault %s removed", v.ID)
 			}
 		} else {
@@ -299,7 +311,7 @@ func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 			if err != nil {
 				return core.Error(core.DbError, "cannot set user %s access for vault %s", c.PublicID, v.ID, err)
 			}
-			if v.UserPublicID == c.PublicID {
+			if v.UserID == c.PublicID {
 				core.Info("my access for vault %s changed to %s", v.ID, AccessLabels[c.Access])
 			}
 		}

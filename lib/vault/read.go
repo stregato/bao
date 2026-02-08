@@ -32,7 +32,7 @@ func (v *Vault) readFile(file File, progress chan int64) error {
 		}
 	}()
 
-	writer, err := decryptWriter(v.Realm, v.UserID, file, f, v.getKey)
+	writer, err := decryptWriter(v.Realm, v.UserSecret, file, f, v.getKey)
 	if err != nil {
 		return core.Error(core.GenericError, "cannot create decrypt writer for %s", file.Name, err)
 	}

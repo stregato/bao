@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestStashSynchronize(t *testing.T) {
 
 	// _, err = s.SyncGroups(Users) // Ensure the vault is synchronized before opening
 	// core.TestErr(t, err, "SyncGroups failed: %v")
-	err = s.WaitFiles(file.Id)
+	_, err = s.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "WaitFiles failed: %v")
 
 	db2 := sqlx.NewTestDB(t, "vault2.db", "")

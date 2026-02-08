@@ -363,8 +363,8 @@ class Vault:
     def __init__(self):
         self.hnd: int = 0
         self.id: str = ""
+        self.userSecret: str = ""
         self.userId: str = ""
-        self.userPublicId: str = ""
         self.realm: str = ""
         self.store_config: Dict[str, Any] = {}
         self.author: str = ""
@@ -377,7 +377,7 @@ class Vault:
         s.hnd = r.hnd
         s.id = info.get("id", "")
         s.userId = info.get("userId", "")
-        s.userPublicId = info.get("userPublicId", "")
+        s.userSecret = info.get("userSecret", "")
         s.realm = info.get("realm", "")
         s.store_config = info.get("storeConfig", {})
         s.author = info.get("author", "")
@@ -426,13 +426,18 @@ class Vault:
         Wait for the specified files to be fully written/synced.
         
         :param self: Bao instance
+        :param timeout_ms: Timeout in milliseconds (0 for no timeout)
+        :type timeout_ms: int
         :param file_ids: List of file IDs to wait for
         :type file_ids: Optional[List[int]]
-        :return: Result of the wait operation
-        :rtype: Any
+        :return: List of files that completed I/O operations
+        :rtype: List[FileInfo]
         '''
         payload = None if file_ids is None else j8(file_ids)
-        return consume(lib.bao_vault_waitFiles(self.hnd, payload))
+        result = consume(lib.bao_vault_waitFiles(self.hnd, timeout_ms, payload))
+        if not result:
+            return []
+        return [FileInfo.from_dict(f) for f in result]
 
     def sync(self):
         return consume(lib.bao_vault_sync(self.hnd))

@@ -204,6 +204,9 @@ typedef Argsi = CResult Function(int);
 typedef ArgsII = CResult Function(Int64, Int64);
 typedef Argsii = CResult Function(int, int);
 
+typedef ArgsIIS = CResult Function(Int64, Int64, Pointer<Utf8>);
+typedef ArgsiiS = CResult Function(int, int, Pointer<Utf8>);
+
 typedef ArgsSS = CResult Function(Pointer<Utf8>, Pointer<Utf8>);
 // Three C strings
 typedef ArgsSSS = CResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);

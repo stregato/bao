@@ -47,7 +47,7 @@ void main() {
       expect(file.name, 'file.txt');
       expect(file.size, 0);
 
-      await s.waitFiles([file.id]);
+      await s.waitFiles(0, [file.id]);
 
       s.close();
       db.close();

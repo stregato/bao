@@ -295,7 +295,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		BlockChanges: blockChanges,
 	}
 
-	payload, err := encodeBlock(v.UserID, block)
+	payload, err := encodeBlock(v.UserSecret, block)
 	if err != nil {
 		return false, core.Error(core.EncodeError, "cannot encode block", err)
 	}
@@ -329,6 +329,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		core.Info("data mismatch on %s, retrying read %d", blockPath, i+1)
 		time.Sleep(100 * time.Millisecond)
 	}
+	v.notifyChange(blockPath)
 
 	for _, bc := range blockChanges {
 		c, err := unmarshalChange(bc)
@@ -336,11 +337,11 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 			return false, core.Error(core.ParseError, "cannot unmarshal change %v", bc, err)
 		}
 
-		err = c.Apply(v, v.UserPublicID)
+		err = c.Apply(v, v.UserID)
 		if err != nil {
 			return false, core.Error(core.GenericError, "cannot handle change %v", c, err)
 		}
-		core.Info("%s by %x in %s", c, v.UserPublicID.Hash(), v.ID)
+		core.Info("%s by %x in %s", c, v.UserID.Hash(), v.ID)
 	}
 
 	_, err = v.DB.Exec("SET_BLOCK", sqlx.Args{

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:bao/bao.dart';
+import 'identity.dart';
 
 class FileInfo {
   late int id;
@@ -44,6 +44,6 @@ class FileInfo {
     keyId = map['keyId'] ?? 0;
     storageDir = map['storageDir'] ?? '';
     storageName = map['storageName'] ?? '';
-    authorId = map['authorId'] ?? '';
+    authorId = PublicID(map['authorId'] as String? ?? '');
   }
 }

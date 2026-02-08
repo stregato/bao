@@ -12,6 +12,7 @@ package main
 */
 import "C"
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -44,7 +45,7 @@ func cResult(v any, hnd int64, err error) C.Result {
 	if !ok {
 		val, err = json.Marshal(v)
 		if err != nil {
-			logrus.Errorf("cannot marshal result %v", v, err)
+			logrus.Errorf("cannot marshal result %v: %v", v, err)
 			return C.Result{nil, 0, C.longlong(hnd), C.CString(err.Error())}
 		}
 	}
@@ -755,13 +756,14 @@ func bao_vault_sync(vH C.longlong) C.Result {
 }
 
 // bao_vault_waitFiles completes the read and write operations for the specified files in the bao.
+// Returns the JSON-encoded array of files that completed I/O operations.
 //
 //export bao_vault_waitFiles
-func bao_vault_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
+func bao_vault_waitFiles(sH C.longlong, timeoutMs C.longlong, fileIdsC *C.char) C.Result {
 	var fileIds []vault.FileId
 
 	core.TimeTrack()
-	core.Start("called with sH: %d", sH)
+	core.Start("called with sH: %d, timeout: %dms", sH, timeoutMs)
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		return cResult(nil, 0, err)
@@ -770,19 +772,26 @@ func bao_vault_waitFiles(sH C.longlong, fileIdsC *C.char) C.Result {
 	if fileIdsC != nil {
 		err = cInput(err, fileIdsC, &fileIds)
 		if err != nil {
-			logrus.Errorf("cannot unmarshal file IDs %s", C.GoString(fileIdsC), err)
+			logrus.Errorf("cannot unmarshal file IDs %s: %v", C.GoString(fileIdsC), err)
 			return cResult(nil, 0, err)
 		}
 	}
 
-	err = s.WaitFiles(fileIds...)
+	ctx := context.Background()
+	if timeoutMs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+	}
+
+	files, err := s.WaitFiles(ctx, fileIds...)
 	if err != nil {
-		logrus.Errorf("cannot synchronize vault %d", sH, err)
+		logrus.Errorf("cannot synchronize vault %d: %v", sH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("bao_sync successful for vault %d with file IDs: %v", sH, fileIds)
-	return cResult(nil, 0, nil)
+	core.End("bao_sync successful for vault %d with %d files", sH, len(files))
+	return cResult(files, 0, nil)
 }
 
 // bao_vault_setAttribute sets an attribute for the current user
@@ -830,7 +839,7 @@ func bao_vault_getAttribute(sH C.longlong, nameC, authorC *C.char) C.Result {
 		core.LogError("cannot get attribute '%s' for provided user (len %d) in vault %d", name, authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attribute '%s' for user len %d in vault %d", name, authorLen, sH, value)
+	core.End("got attribute '%s' for user len %d in vault %d", name, authorLen, sH)
 	return cResult(value, 0, nil)
 }
 
@@ -854,7 +863,7 @@ func bao_vault_getAttributes(sH C.longlong, authorC *C.char) C.Result {
 		core.LogError("cannot get attributes for provided user (len %d) in vault %d", authorLen, sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("got attributes for user len %d in vault %d", authorLen, sH, attrs)
+	core.End("got attributes for user len %d in vault %d", authorLen, sH)
 	return cResult(attrs, 0, nil)
 }
 
@@ -895,24 +904,8 @@ func bao_vault_stat(sH C.longlong, name *C.char) C.Result {
 		core.LogError("cannot get file info for %s in vault %d", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
 	}
-	core.End("successful statistic for file %s in vault %d", C.GoString(name), sH, info)
+	core.End("successful statistic for file %s in vault %d", C.GoString(name), sH)
 	return cResult(info, 0, err)
-}
-
-// bao_vault_getGroup returns the group name of the specified file.
-//
-//export bao_vault_getGroup
-func bao_vault_getGroup(sH C.longlong, name *C.char) C.Result {
-	core.TimeTrack()
-	core.Start("bao_vault_getGroup called with sH: %d, name: %s", sH, C.GoString(name))
-	s, err := vaults.Get(int64(sH))
-	if err != nil {
-		return cResult(nil, 0, err)
-	}
-
-	group, err := s.GetGroup(C.GoString(name))
-	core.End("successful group retrieval for file %s in vault %d", C.GoString(name), sH, group)
-	return cResult(group, 0, err)
 }
 
 // bao_getAuthor returns the author of the specified file.
@@ -929,7 +922,7 @@ func bao_vault_getAuthor(sH C.longlong, name *C.char) C.Result {
 	}
 
 	author, err := s.GetAuthor(C.GoString(name))
-	core.End("successful author retrieval for file %s in vault %d", C.GoString(name), sH, author)
+	core.End("successful author retrieval for file %s in vault %d", C.GoString(name), sH)
 	return cResult(author, 0, err)
 }
 

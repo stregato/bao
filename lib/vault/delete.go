@@ -28,7 +28,7 @@ func (v *Vault) Delete(name string, options IOOption) error {
 		return core.Error(core.FileError, "cannot write record for file %s in %s", name, v.Realm, err)
 	}
 
-	head, err := encodeHead(v.Realm, file, v.UserID, v.getKey)
+	head, err := encodeHead(v.Realm, file, v.UserSecret, v.getKey)
 	if err != nil {
 		return core.Error(core.DbError, "cannot encode head in Bao.Delete", err)
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 func (v *Vault) Versions(name string) ([]File, error) {
-	v.WaitFiles()
+	v.waitFiles()
 
 	dir, name := path.Split(name)
 	dir = path.Clean(dir)

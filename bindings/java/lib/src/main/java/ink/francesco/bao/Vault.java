@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,8 +19,8 @@ public class Vault {
 
     long hnd;
     String id;
+    String userSecret;
     String userId;
-    String userPublicId;
     String url;
     Map<String, Object> storeConfig = new HashMap<>();
     String author;
@@ -44,8 +45,8 @@ public class Vault {
         s.hnd = r.hnd;
         var m = r.map();
         s.id = (String) m.getOrDefault("id", "");
+        s.userSecret = (String) m.getOrDefault("userSecret", "");
         s.userId = (String) m.getOrDefault("userId", "");
-        s.userPublicId = (String) m.getOrDefault("userPublicId", "");
         s.url = (String) m.getOrDefault("url", "");
         Object sc = m.get("storeConfig");
         if (sc instanceof Map<?, ?> scm) {
@@ -94,9 +95,11 @@ public class Vault {
         return new ArrayList<>(r.list(String.class));
     }
 
-    public void waitFiles(List<Long> ids) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_waitFiles(hnd, mapper.writeValueAsString(ids));
-        r.check();
+    public List<FileInfo> waitFiles(long timeoutMs, List<Long> ids) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_waitFiles(hnd, timeoutMs, mapper.writeValueAsString(ids));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> raw = (List<Map<String, Object>>) (List<?>) r.list(Map.class);
+        return raw.stream().map(FileInfo::fromMap).collect(Collectors.toList());
     }
 
     public List<FileInfo> sync(List<String> groups) throws Exception {
@@ -132,6 +135,11 @@ public class Vault {
     public FileInfo stat(String name) throws Exception {
         Result r = BaoLibrary.instance.bao_vault_stat(hnd, name);
         return FileInfo.fromMap(r.map());
+    }
+
+    public String getAuthor(String name) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_getAuthor(hnd, name);
+        return r.string();
     }
 
     public FileInfo read(String name, String dest, long options) throws Exception {

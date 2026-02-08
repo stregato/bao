@@ -46,7 +46,7 @@ public interface BaoLibrary extends Library {
     Result bao_vault_getAccess(long baoH, String userId);
     Result bao_vault_getGroups(long baoH, String userId);
     Result bao_listGroups(long baoH);
-    Result bao_vault_waitFiles(long baoH, String fileIdsJson);
+    Result bao_vault_waitFiles(long baoH, long timeoutMs, String fileIdsJson);
     Result bao_vault_sync(long baoH, String groupsJson);
     Result bao_vault_setAttribute(long baoH, long options, String name, String value);
     Result bao_vault_getAttribute(long baoH, String name, String author);
@@ -56,6 +56,8 @@ public interface BaoLibrary extends Library {
     Result bao_vault_read(long baoH, String name, String dest, long options);
     Result bao_vault_write(long baoH, String dest, String src, Data attrs, long options);
     Result bao_vault_delete(long baoH, String name, long options);
+    Result bao_vault_getAuthor(long baoH, String name);
+    Result bao_vault_versions(long baoH, String name);
     Result bao_vault_allocatedSize(long baoH);
 
     Result bao_replica_open(long baoH, int dbHandle);

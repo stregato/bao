@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path"
 	"testing"
@@ -39,7 +40,7 @@ func TestVaultWrite(t *testing.T) {
 	file, err := v.Write("folder/simple.txt", tmpFile, attrs, ScheduledOperation, nil)
 	core.TestErr(t, err, "Write failed: %v")
 
-	err = v.WaitFiles(file.Id)
+	_, err = v.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "Sync failed: %v")
 	v.Close()
 	db.Close()
@@ -70,7 +71,7 @@ func TestVaultWrite(t *testing.T) {
 	core.Assert(t, file.ModTime.Unix() > 0, "")
 	core.Assert(t, file.IsDir == false, "")
 	core.Assert(t, file.Id > 0, "")
-	err = v.WaitFiles(file.Id)
+	_, err = v.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "WaitFiles failed: %v")
 
 	content, err := os.ReadFile(tmpFile2)
@@ -98,7 +99,7 @@ func TestWritePublic(t *testing.T) {
 	file, err := s.Write("simple.txt", tmpFile, attrs, 0, nil)
 	core.TestErr(t, err, "Write failed")
 
-	err = s.WaitFiles(file.Id)
+	_, err = s.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "Sync failed")
 	s.Close()
 	db.Close()
@@ -125,7 +126,7 @@ func TestWriteHome(t *testing.T) {
 	file, err := v.Write(path.Join(bob.String(), "simple.txt"), tmpFile, attrs, 0, nil)
 	core.TestErr(t, err, "Write failed")
 
-	err = v.WaitFiles(file.Id)
+	_, err = v.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "Sync failed")
 	v.Close()
 	db.Close()
@@ -179,4 +180,71 @@ func TestWriteAttrs(t *testing.T) {
 	core.TestErr(t, err, "ReadDir failed: %v")
 	core.Assert(t, len(files) == 0, "Expected no files after delete")
 	s.Close()
+}
+
+func TestWriteWithSyncRelay(t *testing.T) {
+	alice, aliceSecret, err := security.NewKeyPair()
+	core.TestErr(t, err, "cannot create keys")
+	bob, bobSecret, err := security.NewKeyPair()
+	core.TestErr(t, err, "cannot create keys")
+
+	// Setup: Alice creates a vault with sync relay
+	db1 := sqlx.NewTestDB(t, "vault_alice.db", "")
+	store := store.LoadTestStore(t, "test")
+	defer store.Close()
+
+	config := Config{
+		// SyncRelay: "ws://localhost:8787",
+		SyncRelay: "wss://sync-relay.baolib.org",
+	}
+
+	va, err := Create(Users, aliceSecret, store, db1, config)
+	core.TestErr(t, err, "Alice: Create failed: %v")
+
+	// Setup: Bob opens the same vault with sync relay
+	db2 := sqlx.NewTestDB(t, "vault_bob.db", "")
+	vb, err := Open(Users, bobSecret, alice, store, db2)
+	core.TestErr(t, err, "Bob: Open failed: %v")
+
+	// Give both sync relays a moment to connect
+	time.Sleep(time.Second)
+
+	// Alice grants Bob access
+	err = va.SyncAccess(0, AccessChange{
+		UserId: bob,
+		Access: Read,
+	})
+	core.TestErr(t, err, "Alice: SyncAccess failed: %v")
+
+	// Alice writes a file
+	tmpFile := t.TempDir() + "/relay-test.txt"
+	err = os.WriteFile(tmpFile, []byte("Testing sync relay"), 0644)
+	core.TestErr(t, err, "Alice: WriteFile failed: %v")
+
+	_, err = va.Write("relay/test.txt", tmpFile, nil, 0, nil)
+	core.TestErr(t, err, "Alice: Write failed: %v")
+
+	time.Sleep(time.Second)
+
+	// Bob reads directory and should see Alice's file
+	files, err := vb.ReadDir("relay", time.Time{}, 0, 0)
+	core.TestErr(t, err, "Bob: ReadDir failed: %v")
+	core.Assert(t, len(files) == 1, "Bob: Expected one file in directory, got %d", len(files))
+	core.Assert(t, files[0].Name == "test.txt", "Bob: Expected file name to be 'test.txt'")
+	core.Assert(t, files[0].Size == 18, "Bob: Expected file size to be 18 bytes")
+
+	// Bob reads the file
+	readFile := t.TempDir() + "/relay-test-read.txt"
+	_, err = vb.Read("relay/test.txt", readFile, 0, nil)
+	core.TestErr(t, err, "Bob: Read failed: %v")
+
+	content, err := os.ReadFile(readFile)
+	core.TestErr(t, err, "Bob: ReadFile failed: %v")
+	core.Assert(t, string(content) == "Testing sync relay", "Bob: Expected file content to match")
+
+	// Clean up
+	va.Close()
+	vb.Close()
+	db1.Close()
+	db2.Close()
 }

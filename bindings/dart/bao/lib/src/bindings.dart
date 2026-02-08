@@ -3,8 +3,10 @@ import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:bao/bao.dart';
 import 'package:ffi/ffi.dart';
+
+import 'identity.dart';
+import 'loader.dart';
 
 typedef Handler = CResult Function(List<Object?> args);
 
@@ -35,6 +37,8 @@ int toNativeInt(Object? o) {
 Object toNative(Object? o) {
   if (o is String) {
     return toNativeUtf8(o);
+  } else if (o is PrivateID || o is PublicID) {
+    return toNativeUtf8(o.toString());
   } else if (o is Uint8List) {
     return toNativeData(o);
   } else if (o is int) {
@@ -66,8 +70,10 @@ final Map<String, Handler> _handlers = <String, Handler>{
       Function.apply(libPublicID, args),
   'bao_security_newKeyPair': (List<Object?> args) =>
       Function.apply(libNewKeyPair, args),
-  'bao_security_decodeID': (List<Object?> args) =>
-      Function.apply(libDecodeID, args),
+  'bao_security_decodePublicID': (List<Object?> args) =>
+      Function.apply(libDecodePublicID, args),
+  'bao_security_decodePrivateID': (List<Object?> args) =>
+      Function.apply(libDecodePrivateID, args),
   'bao_security_ecEncrypt': (List<Object?> args) =>
       Function.apply(libEcEncrypt, args),
   'bao_security_ecDecrypt': (List<Object?> args) =>
@@ -117,6 +123,10 @@ final Map<String, Handler> _handlers = <String, Handler>{
   'bao_vault_write': (List<Object?> args) => Function.apply(libBaoWrite, args),
   'bao_vault_delete': (List<Object?> args) =>
       Function.apply(libBaoDelete, args),
+  'bao_vault_getAuthor': (List<Object?> args) =>
+      Function.apply(libBaoGetAuthor, args),
+  'bao_vault_versions': (List<Object?> args) =>
+      Function.apply(libBaoVersions, args),
   'bao_vault_allocatedSize': (List<Object?> args) =>
       Function.apply(libBaoAllocatedSize, args),
   'bao_replica_open': (List<Object?> args) =>
@@ -161,8 +171,9 @@ late Args libTestFun;
 // Id functions
 late Args libNewPrivateID;
 late Args libNewKeyPair;
-late Args libPublicID;
-late ArgsS libDecodeID;
+late ArgsS libPublicID;
+late ArgsS libDecodePublicID;
+late ArgsS libDecodePrivateID;
 late ArgsSD libEcEncrypt;
 late ArgsSD libEcDecrypt;
 late ArgsSDD libAesEncrypt;
@@ -190,8 +201,8 @@ late ArgsiSSii libBaoOpen;
 late Argsi libBaoClose;
 late Argsiis libBaoSyncAccess;
 late Argsi libBaoGetAccesses;
-late Argsi libBaoGetAccess;
-late ArgsiS libBaoWaitFiles;
+late ArgsiS libBaoGetAccess;
+late ArgsiiS libBaoWaitFiles;
 late Argsi libBaoSync;
 late Argsiiss libBaoSetAttribute;
 late ArgsiSS libBaoGetAttribute;
@@ -201,6 +212,8 @@ late ArgsiS libBaoStat;
 late ArgsiSSi libBaoRead;
 late ArgsiSSDi libBaoWrite;
 late ArgsiSi libBaoDelete;
+late ArgsiS libBaoGetAuthor;
+late ArgsiS libBaoVersions;
 late Argsi libBaoAllocatedSize;
 
 // SQL Layer functions
@@ -232,8 +245,9 @@ void loadFunctions(DynamicLibrary lib) {
       lib.lookupFunction<Args, Args>('bao_security_newPrivateID');
   libNewKeyPair =
       lib.lookupFunction<Args, Args>('bao_security_newKeyPair');
-  libPublicID = lib.lookupFunction<Args, Args>('bao_security_publicID');
-  libDecodeID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_decodeID');
+  libPublicID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_publicID');
+  libDecodePublicID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_decodePublicID');
+  libDecodePrivateID = lib.lookupFunction<ArgsS, ArgsS>('bao_security_decodePrivateID');
   libEcEncrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecEncrypt');
   libEcDecrypt = lib.lookupFunction<ArgsSD, ArgsSD>('bao_security_ecDecrypt');
   libAesEncrypt =
@@ -264,9 +278,9 @@ void loadFunctions(DynamicLibrary lib) {
       lib.lookupFunction<ArgsIiS, Argsiis>("bao_vault_syncAccess");
   libBaoGetAccesses =
       lib.lookupFunction<ArgsI, Argsi>("bao_vault_getAccesses");
-  libBaoGetAccess = lib.lookupFunction<ArgsI, Argsi>("bao_vault_getAccess");
+  libBaoGetAccess = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_getAccess");
   libBaoWaitFiles =
-      lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_waitFiles");
+      lib.lookupFunction<ArgsIIS, ArgsiiS>("bao_vault_waitFiles");
   libBaoSync = lib.lookupFunction<ArgsI, Argsi>("bao_vault_sync");
   libBaoSetAttribute =
       lib.lookupFunction<ArgsIiSS, Argsiiss>("bao_vault_setAttribute");
@@ -280,6 +294,8 @@ void loadFunctions(DynamicLibrary lib) {
   libBaoRead = lib.lookupFunction<ArgsISSI, ArgsiSSi>("bao_vault_read");
     libBaoWrite = lib.lookupFunction<ArgsISSDI, ArgsiSSDi>("bao_vault_write");
     libBaoDelete = lib.lookupFunction<ArgsISi, ArgsiSi>("bao_vault_delete");
+  libBaoGetAuthor = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_getAuthor");
+  libBaoVersions = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_versions");
   libBaoAllocatedSize =
       lib.lookupFunction<ArgsI, Argsi>("bao_vault_allocatedSize");
 

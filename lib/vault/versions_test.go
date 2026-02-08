@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"testing"
@@ -29,7 +30,7 @@ func TestVersions(t *testing.T) {
 	// Write the first version
 	file1, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write version 1 failed")
-	err = v.WaitFiles(file1.Id)
+	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Verify the file exists
@@ -44,7 +45,7 @@ func TestVersions(t *testing.T) {
 	core.TestErr(t, err, "WriteFile for version 2 failed")
 	file2, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write version 2 failed")
-	err = v.WaitFiles(file2.Id)
+	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Sleep briefly to ensure different timestamps
@@ -55,7 +56,7 @@ func TestVersions(t *testing.T) {
 	core.TestErr(t, err, "WriteFile for version 3 failed")
 	file3, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write version 3 failed")
-	err = v.WaitFiles(file3.Id)
+	_, err = v.WaitFiles(context.Background(), file3.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Sync to populate the files table from storage
@@ -149,7 +150,7 @@ func TestVersionsAfterDelete(t *testing.T) {
 	// Write the file
 	file1, err := v.Write("docs/deleted.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write failed")
-	err = v.WaitFiles(file1.Id)
+	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Sleep briefly
@@ -160,7 +161,7 @@ func TestVersionsAfterDelete(t *testing.T) {
 	core.TestErr(t, err, "WriteFile for update failed")
 	file2, err := v.Write("docs/deleted.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write update failed")
-	err = v.WaitFiles(file2.Id)
+	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Delete the file
@@ -204,13 +205,13 @@ func TestVersionsWithDifferentPaths(t *testing.T) {
 	// Write to root
 	file1, err := v.Write("test.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write to root failed")
-	err = v.WaitFiles(file1.Id)
+	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Write to subdirectory
 	file2, err := v.Write("docs/test.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write to docs/ failed")
-	err = v.WaitFiles(file2.Id)
+	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Write another version to subdirectory
@@ -218,7 +219,7 @@ func TestVersionsWithDifferentPaths(t *testing.T) {
 	core.TestErr(t, err, "WriteFile for update failed")
 	file3, err := v.Write("docs/test.txt", tmpFile, nil, 0, nil)
 	core.TestErr(t, err, "Write update to docs/ failed")
-	err = v.WaitFiles(file3.Id)
+	_, err = v.WaitFiles(context.Background(), file3.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Sync to populate the files table

@@ -1,6 +1,7 @@
 package replica
 
 import (
+	"context"
 	_ "embed"
 	"testing"
 
@@ -71,7 +72,7 @@ func TestExec(t *testing.T) {
 	core.Assert(t, rows[1][0] == "second hello", "unexpected value in second row: %s", rows[1][0])
 	core.Assert(t, rows[2][0] == "third hello", "unexpected value in third row: %s", rows[2][0])
 
-	v.WaitFiles() // Ensure all changes are written to the database
+	v.WaitFiles(context.Background()) // Ensure all changes are written to the database
 
 	v.Close()
 	db.Close()

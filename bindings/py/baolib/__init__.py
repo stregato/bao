@@ -19,6 +19,7 @@ from .bao import (
     webdav_store,
     sftp_store,
 )
+from .config import Config
 from .error import WrappedError, has_code
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "Vault",
     "Replica",
     "Mailbox",
+    "Config",
     "newPrivateID",
     "newKeyPair",
     "newKeyPairMust",

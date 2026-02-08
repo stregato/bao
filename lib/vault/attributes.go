@@ -14,7 +14,7 @@ func (v *Vault) SetAttribute(options IOOption, name, value string) error {
 	}
 	bc, err := marshalChange(change)
 	if err != nil {
-		return core.Error(core.ParseError, "cannot marshal attribute change %s for user %s", name, v.UserPublicID, err)
+		return core.Error(core.ParseError, "cannot marshal attribute change %s for user %s", name, v.UserSecret, err)
 	}
 	err = v.stageBlockChange(bc)
 	if err != nil {
@@ -33,7 +33,7 @@ func (v *Vault) SetAttribute(options IOOption, name, value string) error {
 		}
 	}
 
-	core.End("successfully added attribute %s for public id %s", name, v.UserPublicID)
+	core.End("successfully added attribute %s for public id %s", name, v.UserSecret)
 	return nil
 }
 

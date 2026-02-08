@@ -3,6 +3,7 @@
 /// More dartdocs go here.
 library;
 
+export 'src/config.dart';
 export 'src/vault.dart';
 export 'src/identity.dart';
 export 'src/message.dart';

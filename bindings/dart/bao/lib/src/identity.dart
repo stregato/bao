@@ -1,4 +1,4 @@
-import 'package:bao/src/bindings.dart';
+import 'bindings.dart';
 
 class PrivateID  {
   final String _value;
@@ -28,12 +28,14 @@ class PrivateID  {
   PublicID publicID() {
     return PublicID(bindings.call('bao_security_publicID', [toString()]).string);
   }
+
+  dynamic toJson() => _value;
 }
 
 class PublicID {
   final String _value;
   
-  PublicID([String value = ""]) : _value = value.isEmpty ? bindings.call('bao_security_newPublicID', []).string : value;
+  PublicID([String value=""]) : _value = value;
   
   @override
   String toString() => _value;
@@ -54,4 +56,6 @@ class PublicID {
   Map<String, dynamic> decode() {
     return bindings.call('bao_security_decodePublicID', [_value]).map;
   }
+
+  dynamic toJson() => _value;
 }

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,7 +133,8 @@ func TestConcurrentWritesStress(t *testing.T) {
 		core.TestErr(t, err, "Write failed: %v")
 	}
 
-	core.TestErr(t, vault.WaitFiles(ids...), "WaitFiles failed: %v")
+	_, err := vault.WaitFiles(context.Background(), ids...)
+	core.TestErr(t, err, "WaitFiles failed: %v")
 	writeDur := time.Since(writeStart)
 
 	files, err := statsFromReadDir(t, vault, "")
@@ -172,7 +174,8 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 		core.TestErr(t, err, "initial write failed: %v")
 		names[i] = name
 	}
-	core.TestErr(t, vault.WaitFiles(), "initial WaitFiles failed: %v")
+	_, err := vault.WaitFiles(context.Background())
+	core.TestErr(t, err, "initial WaitFiles failed: %v")
 	t.Logf("initialized mixed workload: baseFiles=%d payloadRange=[%d,%d) initWritten=%.2f MB ", baseFiles, payloadBaseSize, payloadBaseSize+payloadSizeRange, bytesToMB(initWritten.Load()))
 
 	writerWG := sync.WaitGroup{}
@@ -251,9 +254,11 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 	core.Assert(t, readSuccess.Load() == int64(readerCount*iterations), "unexpected read success count: %d", readSuccess.Load())
 
 	if len(writeIDs) > 0 {
-		core.TestErr(t, vault.WaitFiles(writeIDs...), "WaitFiles for concurrent writes failed: %v")
+		_, err := vault.WaitFiles(context.Background(), writeIDs...)
+		core.TestErr(t, err, "WaitFiles for concurrent writes failed: %v")
 	} else {
-		core.TestErr(t, vault.WaitFiles(), "WaitFiles for concurrent writes failed: %v")
+		_, err := vault.WaitFiles(context.Background())
+		core.TestErr(t, err, "WaitFiles for concurrent writes failed: %v")
 	}
 	runDur := time.Since(runStart)
 
@@ -295,7 +300,8 @@ func TestRetentionCleanupStress(t *testing.T) {
 		core.TestErr(t, err, "initial retention write failed: %v")
 		infos = append(infos, fileInfo{id: file.Id, storeDir: file.StoreDir, storeName: file.StoreName, name: name})
 	}
-	core.TestErr(t, vault.WaitFiles(), "WaitFiles failed for retention setup: %v")
+	_, err := vault.WaitFiles(context.Background())
+	core.TestErr(t, err, "WaitFiles failed for retention setup: %v")
 
 	retentionThreshold := core.Now().Add(-vault.Config.Retention).Add(-1 * time.Hour)
 	oldStoreTS := retentionThreshold.Add(-1 * time.Hour).UTC().Format("20060102150405")

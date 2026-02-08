@@ -76,7 +76,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 		LocalCopy:     source,                                                         // Local path of the file
 		StoreDir:      path.Join(baseFolder, getSegmentDir(v.Config.SegmentInterval)), // Directory in the store.where the file is located
 		StoreName:     generateFilename(now),                                          // Name of the file in the storage
-		AuthorId:      v.UserID.PublicIDMust(),                                        // Author ID
+		AuthorId:      v.UserSecret.PublicIDMust(),                                    // Author ID
 		KeyId:         keyId,                                                          // Key ID for encryption
 	}
 
@@ -103,7 +103,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	}()
 
 	file.Flags &= ^PendingWrite // Clear the PendingWrite flag
-	head, err := encodeHead(v.Realm, file, v.UserID, v.getKey)
+	head, err := encodeHead(v.Realm, file, v.UserSecret, v.getKey)
 	if err != nil {
 		return core.Error(core.EncodeError, "cannot encode head in Bao.Write", err)
 	}
@@ -123,6 +123,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 			err2 = core.Error(core.FileError, "cannot write head for file %s in Bao.Write, name %v, group %v",
 				file.Name, file.StoreName, file.StoreDir, err)
 		} else {
+			v.notifyChange(path.Join(file.StoreDir, file.StoreName))
 			core.End("")
 		}
 		wg.Done()
@@ -201,7 +202,7 @@ func (v *Vault) scheduleChangeFile() {
 	}
 	time.AfterFunc(time.Second, func() {
 		v.ioWritingWg.Wait()
-		store.WriteFile(v.store, path.Join(v.Realm.String(), DataFolder, ".last_change"), []byte{})
+		store.WriteFile(v.store, path.Join(v.Realm.String(), DataFolder, ".change"), []byte{})
 		defer atomic.StoreInt32(&v.ioLastChangeRunning, 0)
 	})
 	core.End("scheduled change file")
@@ -211,35 +212,4 @@ func (v *Vault) completeChangeFile() {
 	core.Start("completing change file")
 	v.ioWritingWg.Done()
 	core.End("completed change file")
-}
-
-func (v *Vault) checkAndUpdateExternalChange() bool {
-	core.Start("checking and updating external change")
-
-	_, tm, _, _, err := v.DB.GetSetting(path.Join(v.ID, "last_change"))
-	if err != nil {
-		core.End("no changes")
-		return true // If we cannot get the last change, we assume there are changes
-	}
-
-	lastChangeFile := path.Join(v.Realm.String(), DataFolder, ".last_change")
-	stat, err := v.store.Stat(lastChangeFile)
-	if os.IsNotExist(err) {
-		core.End("no change file %s", lastChangeFile)
-		return false
-	}
-	if err != nil {
-		core.Error(core.DbError, "FUNC_END[checkAndUpdateExternalChange]: cannot stat last change file %s", lastChangeFile, err)
-		core.End("no changes")
-		return false
-	}
-	v.DB.SetSetting(path.Join(v.ID, v.Realm.String(), "last_change"), "", stat.ModTime().Unix(), 0, nil)
-
-	if stat.ModTime().Unix() > tm {
-		core.End("change file %s newer -> has changed", lastChangeFile)
-		return true
-	} else {
-		core.End("change file %s older or equal -> not changed", lastChangeFile)
-		return false
-	}
 }

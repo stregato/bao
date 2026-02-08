@@ -14,10 +14,6 @@ type AccessChange struct {
 // SyncAccess applies the provided access changes and optionally flushes them to the store.
 func (v *Vault) SyncAccess(options IOOption, changes ...AccessChange) error {
 	core.Start("syncing access changes %v with options %d", changes, options)
-	if len(changes) == 0 {
-		core.End("no access changes provided")
-		return nil
-	}
 
 	nChanges := 0
 	var err error
@@ -62,9 +58,9 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 	}
 	needNewKey := len(current) == 0
 
-	adminRight := v.UserPublicID == v.Author
+	adminRight := v.UserID == v.Author
 	if !adminRight {
-		if acc, ok := current[v.UserPublicID]; ok && acc&Admin > 0 {
+		if acc, ok := current[v.UserID]; ok && acc&Admin > 0 {
 			adminRight = true
 		}
 	}
@@ -205,7 +201,7 @@ func (v *Vault) GetAccess(publicID security.PublicID) (Access, error) {
 		"userId": publicID,
 	}, &access)
 	if err == sqlx.ErrNoRows {
-		core.End("access 0")
+		core.End("no rows - access 0")
 		return 0, nil // No access
 	}
 

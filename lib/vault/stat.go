@@ -41,26 +41,6 @@ func (v *Vault) Stat(name string) (File, error) {
 	return file, nil
 }
 
-// GetGroup retrieves the group name associated with a given file name.
-func (v *Vault) GetGroup(name string) (Realm, error) {
-	file, found, err := v.queryFileByName(name)
-	if err != nil {
-		return "", core.Error(core.GenericError, "cannot key id for group %s", name, err)
-	}
-	if !found {
-		return "", os.ErrNotExist
-	}
-
-	var group Realm
-	err = v.DB.QueryRow("GET_GROUP_BY_KEY", sqlx.Args{"idx": file.KeyId}, &group)
-	if err != nil {
-		return "", core.Error(core.DbError, "cannot get group for key %d", file.KeyId, err)
-	}
-
-	core.Info("successfully got group for %s: %s", name, group)
-	return group, nil
-}
-
 // GetAuthor retrieves the author ID associated with a given file name.
 func (v *Vault) GetAuthor(name string) (security.PublicID, error) {
 	file, found, err := v.queryFileByName(name)

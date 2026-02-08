@@ -1,6 +1,6 @@
 name: bao
 description: Dart bindings for Bao. Bao is a library for encrypted data storage and exchange. 
-version: 0.0.2
+version: 0.0.3
 repository: https://github.com/stregato/bao
 
 data:

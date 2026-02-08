@@ -25,6 +25,7 @@ const (
 	ConfigError  = "ConfigError"
 	TestError    = "TestError"
 	GenericError = "GenericError"
+	Timeout      = "Timeout"
 )
 
 const MaxRecentErrors = 16000
@@ -87,7 +88,6 @@ func ErrorCode(err error) string {
 	}
 	return ""
 }
-
 
 func Error(code string, format string, args ...any) error {
 	pc, file, line, _ := runtime.Caller(1)

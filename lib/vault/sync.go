@@ -24,6 +24,15 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	now := time.Now()
 
 	baseDir := path.Join(string(v.Realm), DataFolder)
+	hasChanged, err := v.hasChanged(baseDir)
+	if err != nil {
+		return nil, core.Error(core.GenericError, "cannot determine if vault has changed", err)
+	}
+	if !hasChanged {
+		core.End("no changes detected in vault %s", v.ID)
+		return nil, nil
+	}
+
 	// 1. Get the last store directory with prefix baseFolder
 	lastStoreDir, err := v.findLastStoreDirIn(baseDir)
 	if err != nil {
@@ -194,7 +203,7 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (File, error) {
 		return File{}, core.Error(core.FileError, "cannot read sealed file %s", n, err)
 	}
 
-	file, err := decodeHead(v.Realm, head, v.UserID, v.getKey, v.getUserByShortId)
+	file, err := decodeHead(v.Realm, head, v.UserSecret, v.getKey, v.getUserByShortId)
 	if err != nil {
 		return File{}, core.Error(core.FileError, "cannot decode file head %s", n, err)
 	}
@@ -266,33 +275,3 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 	core.End("")
 	return file, err
 }
-
-// func (v *Vault) ListGroups() ([]Realm, error) {
-// 	core.Start("")
-
-// 	now := time.Now()
-// 	if len(v.groups) > 0 {
-// 		core.End("returning cached groups, count: %d in %s", len(v.groups), time.Since(now))
-// 		return v.groups, nil // Return cached groups if available
-// 	}
-
-// 	rows, err := v.DB.Query("GET_SCOPES", sqlx.Args{"vault": v.ID})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	var groups []Realm
-// 	for rows.Next() {
-// 		var name string
-// 		err = rows.Scan(&name)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		if len(name) < 32 {
-// 			groups = append(groups, Realm(name))
-// 		}
-// 	}
-// 	core.End("%d groups, elapsed %s", len(groups), time.Since(now))
-// 	return groups, nil
-// }

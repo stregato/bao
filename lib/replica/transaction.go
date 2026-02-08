@@ -160,7 +160,7 @@ func (ds *Replica) listUnreadTransactions() (ls []vault.File, err error) {
 			core.End("no transaction files")
 			return nil, nil // no files found, nothing to process
 		}
-		return nil, core.Error(core.FileError, "cannot read files in bao_ql", err)
+		return nil, core.Error(core.FileError, "cannot read files in replica", err)
 	}
 
 	slices.SortFunc(files, func(a, b vault.File) int {
@@ -177,7 +177,7 @@ func (ds *Replica) readTransactionFiles(ls []vault.File) (transactions []transac
 	for _, fi := range ls {
 		transaction, err := ds.readTransaction(fi)
 		if err != nil {
-			core.Error(core.GenericError, "cannot read transaction", err)
+			core.Error(core.GenericError, "cannot read transaction in replica", err)
 			continue
 		}
 		transaction.Id = max(fi.Id, transaction.Id) // set the transaction Id from the file Id

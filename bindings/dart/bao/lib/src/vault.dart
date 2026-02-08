@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:bao/src/fileinfo.dart';
 import 'package:bao/src/bindings.dart';
+import 'config.dart';
 import 'db.dart';
 import 'identity.dart';
 import 'loader.dart';
@@ -46,8 +47,8 @@ const Realm all = 'all';
 class Vault {
   int hnd = 0;
   String id = '';
-  late PrivateID userId;
-  late PublicID userPublicId;
+  late PrivateID userSecret;
+  late PublicID userId;
   late PublicID author;
   Realm realm = '';
   String url = '';
@@ -61,8 +62,8 @@ class Vault {
     s.hnd = res.handle;
     var m = res.map;
     s.id = m['id'] ?? '';
-    s.userId = PrivateID(m['userId']);
-    s.userPublicId = PublicID(m['userPublicId']);
+    s.userSecret = PrivateID(m['userSecret']);
+    s.userId = PublicID(m['userId']);
     if (m['storeConfig'] != null && m['storeConfig'] is Map) {
       final rawManifest = m['storeConfig'] as Map;
       s.storeConfig = StoreConfig.fromJson(Map<String, dynamic>.from(
@@ -71,20 +72,21 @@ class Vault {
     } else {
       s.url = m['url'] ?? '';
     }
-    s.author = m['author'] ?? '';
+    s.author = PublicID(m['author'] as String? ?? '');
     s.config = m['config'] ?? {};
     s.realm = m['realm'] ?? '';
     return s;
   }
 
-  /// Creates a new vault with the given identity, store configuration, and settings.
-  /// The settings parameter is a map of configuration options (see Go vault.Config).
+  /// Creates a new vault with the given identity, store configuration, and config.
+  /// The config parameter is a map of configuration options (see Go vault.Config).
   /// Returns a tuple containing the created Bao and an error message if any.
   static Future<Vault> create(
       Realm realm, PrivateID identity, Store store, DB db,
-      {Map<String, dynamic> settings = const {}}) async {
+      {Config? config}) async {
+    var configMap = config?.toJson() ?? {};
     var res = await bindings.acall(
-        'bao_vault_create', [realm, identity, store.hnd, db.hnd, settings]);
+        'bao_vault_create', [realm, identity, store.hnd, db.hnd, configMap]);
     return fromResult(res);
   }
 
@@ -128,10 +130,16 @@ class Vault {
   }
 
   /// Waits for the specified files (by file ID) to complete pending I/O.
+  /// The [timeoutMs] parameter is the timeout in milliseconds (0 for no timeout).
   /// The [fileIds] parameter is a list of file IDs to wait for.
-  Future<void> waitFiles([List<int> fileIds = const []]) async {
-    var res = await bindings.acall('bao_vault_waitFiles', [hnd, fileIds]);
+  /// Returns the list of files that completed I/O operations.
+  Future<List<FileInfo>> waitFiles([int timeoutMs = 0, List<int> fileIds = const []]) async {
+    var res = await bindings.acall('bao_vault_waitFiles', [hnd, timeoutMs, fileIds]);
     res.throwIfError();
+    if (res.data.isEmpty) {
+      return [];
+    }
+    return res.list.map((e) => FileInfo.fromMap(e)).toList();
   }
 
   /// Returns the list of groups in the stack
@@ -211,6 +219,13 @@ class Vault {
   Future<void> delete(String name, {int options = 0}) async {
     var res = await bindings.acall('bao_vault_delete', [hnd, name, options]);
     res.throwIfError();
+  }
+
+  /// Returns the author of the specified file in the vault.
+  /// The [name] parameter specifies the file name.
+  Future<String> getAuthor(String name) async {
+    var res = await bindings.acall('bao_vault_getAuthor', [hnd, name]);
+    return res.string;
   }
 
   /// Returns the versions of the specified file in the vault.
