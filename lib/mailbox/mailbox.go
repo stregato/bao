@@ -50,7 +50,7 @@ func Send(s *vault.Vault, dest string, message Message) error {
 	return nil
 }
 
-func Receive(s *vault.Vault, dest string, since time.Time, fromLocalId int64) ([]Message, error) {
+func Receive(s *vault.Vault, dest string, since time.Time, fromLocalId vault.FileId) ([]Message, error) {
 	ls, err := s.ReadDir(dest, since, fromLocalId, 0)
 	if os.IsNotExist(err) {
 		return nil, nil

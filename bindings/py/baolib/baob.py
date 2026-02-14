@@ -103,6 +103,9 @@ lib.bao_vault_versions.restype = Result
 lib.bao_vault_allocatedSize.argtypes = [ctypes.c_longlong]
 lib.bao_vault_allocatedSize.restype = Result
 
+lib.bao_vault_waitUpdates.argtypes = [ctypes.c_longlong, ctypes.c_longlong]
+lib.bao_vault_waitUpdates.restype = Result
+
 # Replica
 lib.bao_replica_open.argtypes = [ctypes.c_longlong, ctypes.c_int]
 lib.bao_replica_open.restype = Result

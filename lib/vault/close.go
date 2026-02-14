@@ -9,9 +9,7 @@ func (v *Vault) Close() error {
 	if v.housekeepingTicker != nil {
 		v.housekeepingTicker.Stop()
 	}
-	if v.stopSyncRelay != nil {
-		close(v.stopSyncRelay)
-	}
+	v.stopSyncRelay()
 
 	openedStashesMu.Lock()
 	for i, opened := range openedStashes {

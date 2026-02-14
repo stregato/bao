@@ -65,6 +65,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 	}
 
 	file := File{
+		//		Id:            FileId(snowId),                                                 // Generate a unique file ID using Snowflake algorithm
 		Name:          dest,                                                           // Name of the file
 		Realm:         v.Realm,                                                        // Realm to which the file belongs
 		Size:          size,                                                           // Size of the file

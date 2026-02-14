@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/stregato/bao/lib/core"
@@ -56,6 +57,7 @@ func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, 
 
 		//		lastChangeScheduledFolders: make(map[string]bool),
 		lastCleanupAt: time.Now(),
+		newFiles:      sync.NewCond(&sync.Mutex{}),
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
 		ioScheduleMap: make(map[FileId]chan struct{}),
 	}
@@ -81,6 +83,7 @@ func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, 
 	} else {
 		defer v.syncBlockChain()
 	}
+	v.startSyncRelay()
 	v.startHousekeeping()
 
 	core.Info("successfully opened vault %s", v.ID)

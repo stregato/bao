@@ -9,7 +9,7 @@ export 'src/identity.dart';
 export 'src/message.dart';
 export 'src/mailbox.dart';
 export 'src/fileinfo.dart';
-export 'src/bao_ql.dart';
+export 'src/replica.dart';
 export 'src/db.dart';
 export 'src/loader.dart';
 export 'src/security.dart';

@@ -234,4 +234,12 @@ class Vault {
     var res = await bindings.acall('bao_vault_versions', [hnd, name]);
     return res.list.map((e) => FileInfo.fromMap(e)).toList();
   }
+
+  /// Waits for updates on the vault (e.g., new files synced).
+  /// The [timeoutMs] parameter specifies the timeout in milliseconds (0 for no timeout).
+  /// Returns true if updates arrived before the timeout, false if timeout expired.
+  Future<bool> waitUpdates([int timeoutMs = 0]) async {
+    var res = await bindings.acall('bao_vault_waitUpdates', [hnd, timeoutMs]);
+    return res.boolean;
+  }
 }

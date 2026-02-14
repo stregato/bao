@@ -11,106 +11,119 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+const watchQueueSize = 1024
+
 func (v *Vault) startSyncRelay() error {
-	if v.Config.SyncRelay == "" {
-		if v.stopSyncRelay != nil {
-			close(v.stopSyncRelay)
-			v.stopSyncRelay = nil
+	if v.syncRelayCh != nil || v.Config.SyncRelay == "" {
+		return nil // Sync relay already running or not configured
+	}
+
+	// Open or reuse the websocket connection to the sync relay server
+	client, err := getOrCreateWatchClient(v.Config.SyncRelay)
+	if err != nil {
+		return err
+	}
+
+	client.mu.Lock()
+	if _, exists := client.subscribers[v.ID]; !exists {
+		if err := websocket.Message.Send(client.conn, watchAddPrefix+v.Realm.String()); err != nil {
+			client.mu.Unlock()
+			return core.Error(core.NetError, "cannot send watch add message", err)
 		}
-		return nil // No sync relay configured, nothing to do
+		client.subscribers[v.ID] = make(map[string]*Vault)
 	}
-	if v.stopSyncRelay != nil {
-		return nil // Sync relay already running
-	}
+	instanceID := fmt.Sprintf("%p", v)
+	client.subscribers[v.ID][instanceID] = v
+	client.mu.Unlock()
+	v.syncRelayCh = make(chan string, watchQueueSize)
 
-	// Use vault pointer as unique instance ID to ensure each vault instance gets its own connection
-	blockchainCh, err := v.watchFolder(path.Join(v.Realm.String(), BlockChainFolder))
-	if err != nil {
-		return core.Error(core.GenericError, "cannot watch blockchain folder in sync relay", err)
-	}
-	dataCh, err := v.watchFolder(path.Join(v.Realm.String(), DataFolder))
-	if err != nil {
-		return core.Error(core.GenericError, "cannot watch data folder in sync relay", err)
-	}
+	go v.relayLoop()
+	return nil
+}
 
-	go func() {
-		v.Sync()
-		for {
-			select {
-			case <-v.stopSyncRelay:
-				close(blockchainCh)
-				close(dataCh)
-				return
-			case <-blockchainCh:
-				v.syncBlockChain()
-			case name := <-dataCh:
-				now := core.Now()
-				dir, name := path.Split(name)
-				dir = path.Clean(dir)
-				_, err = v.syncronizeFile(dir, name)
-				if err != nil {
-					core.Error("failed to sync file %s/%s/%s: %v", v.ID, dir, name, err)
-				} else {
-					v.lastSyncAt = now
-				}
+func (v *Vault) relayLoop() {
+	defer v.cleanupSyncRelay()
+
+	v.Sync()
+	blockchainPrefix := path.Join(v.Realm.String(), BlockChainFolder)
+	dataPrefix := path.Join(v.Realm.String(), DataFolder)
+
+	for name := range v.syncRelayCh {
+		switch {
+		case strings.HasPrefix(name, blockchainPrefix+"/"):
+			v.syncBlockChain()
+		case strings.HasPrefix(name, dataPrefix+"/"):
+			now := core.Now()
+			dir, name := path.Split(name)
+			dir = path.Clean(dir)
+			_, err := v.syncronizeFile(dir, name)
+			if err != nil {
+				core.Error("failed to sync file %s/%s/%s: %v", v.ID, dir, name, err)
+			} else {
+				v.lastSyncAt = now
 			}
 		}
-	}()
-	v.stopSyncRelay = make(chan struct{})
-	return nil
+	}
+}
+
+func (v *Vault) cleanupSyncRelay() {
+	client, err := getOrCreateWatchClient(v.Config.SyncRelay)
+	if err != nil {
+		return
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	instanceID := fmt.Sprintf("%p", v)
+	subs := client.subscribers[v.ID]
+	if subs == nil {
+		return
+	}
+
+	// Remove this vault instance from the subscriber list
+	delete(subs, instanceID)
+
+	// If no more subscribers for this vault, clean up
+	if len(subs) == 0 {
+		delete(client.subscribers, v.ID)
+		websocket.Message.Send(client.conn, watchRemovePrefix+v.Realm.String())
+
+		// If no more subscribers for any vault, close the websocket
+		if len(client.subscribers) == 0 {
+			dropWatchClient(v.Config.SyncRelay, client)
+		}
+	}
+}
+
+func (v *Vault) stopSyncRelay() {
+	if v.syncRelayCh == nil {
+		return // Sync relay not running, nothing to do
+	}
+
+	close(v.syncRelayCh)
+	v.syncRelayCh = nil
 }
 
 const watchAddPrefix = "+"
 const watchRemovePrefix = "-"
 
 type syncClient struct {
-	conn        *websocket.Conn
-	folders     map[string]struct{}
-	subscribers map[chan string]struct {
-		vaultID  string
-		folder   string
-		clientID string
-	}
-	mu sync.Mutex
+	conn *websocket.Conn
+	// Subscribers grouped by vault ID.
+	subscribers map[string]map[string]*Vault
+	mu          sync.Mutex
 }
 
 var watchClientsMu sync.Mutex
 var watchClients = map[string]*syncClient{}
 
-func (v *Vault) watchFolder(folder string) (chan string, error) {
-	core.Start("folder %s", folder)
-	folder = strings.TrimSpace(folder)
-	if folder == "" {
-		return nil, core.Error(core.GenericError, "folder is empty")
-	}
-
-	client, err := getOrCreateWatchClient(v.Config.SyncRelay)
-	if err != nil {
-		return nil, err
-	}
-
-	instanceID := fmt.Sprintf("%p", v)
-	onChange := make(chan string)
-	client.mu.Lock()
-	if _, exists := client.folders[folder]; !exists {
-		client.folders[folder] = struct{}{}
-	}
-	client.subscribers[onChange] = struct {
-		vaultID  string
-		folder   string
-		clientID string
-	}{vaultID: v.ID, folder: folder, clientID: instanceID}
-	client.mu.Unlock()
-
-	if err := websocket.Message.Send(client.conn, watchAddPrefix+folder); err != nil {
-		return nil, core.Error(core.NetError, "cannot send watch add message", err)
-	}
-	core.End("onChange=%p", onChange)
-	return onChange, nil
-}
-
 func (v *Vault) notifyChange(filename string) error {
 	core.Start("filename %s", filename)
+	if v.syncRelayCh == nil {
+		core.End("sync relay not running, skipping notify")
+		return nil // Sync relay not running, nothing to do
+	}
 	name := strings.TrimSpace(filename)
 	if name == "" {
 		return core.Error(core.GenericError, "filename is empty")
@@ -212,13 +225,8 @@ func getOrCreateWatchClient(server string) (*syncClient, error) {
 	}
 
 	client = &syncClient{
-		conn:    conn,
-		folders: map[string]struct{}{},
-		subscribers: map[chan string]struct {
-			vaultID  string
-			folder   string
-			clientID string
-		}{},
+		conn:        conn,
+		subscribers: make(map[string]map[string]*Vault),
 	}
 
 	watchClientsMu.Lock()
@@ -242,23 +250,17 @@ func sendToSubscribers(server string, name string, vaultID string, senderClientI
 	client.mu.Lock()
 	defer client.mu.Unlock()
 
-	for ch, sub := range client.subscribers {
-		// Filter by vaultID - only send to subscribers of the same vault
-		if sub.vaultID != vaultID {
-			continue
-		}
-		// Skip sending back to the client that sent the notification
-		if sub.clientID == senderClientID {
-			continue
-		}
-		// Only send if the filename matches the subscribed folder
-		if strings.HasPrefix(name, sub.folder+"/") || name == sub.folder {
-			if !safeSend(ch, name) {
-				delete(client.subscribers, ch)
-			}
+	subs := client.subscribers[vaultID]
+	if subs == nil {
+		core.End("no subscribers for vaultID %s", vaultID)
+		return
+	}
+	for clientID, v := range subs {
+		if clientID != senderClientID && v.syncRelayCh != nil {
+			go safeSend(v.syncRelayCh, name)
 		}
 	}
-	core.End("sent to %d subscribers", len(client.subscribers))
+	core.End("sent to %d subscribers", len(subs))
 }
 
 func dropWatchClient(server string, client *syncClient) {

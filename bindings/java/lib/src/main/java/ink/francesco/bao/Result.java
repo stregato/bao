@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
-
 public class Result extends Structure implements Structure.ByValue {
     public Pointer ptr;
     public NativeLong len;
@@ -69,6 +68,11 @@ public class Result extends Structure implements Structure.ByValue {
     public int integer() throws IOException {
         check();
         return mapper.readValue(data(), Integer.class);
+    }
+
+    public boolean bool() throws IOException {
+        check();
+        return mapper.readValue(data(), Boolean.class);
     }
 
     public byte[] bytes() {

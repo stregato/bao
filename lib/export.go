@@ -878,7 +878,7 @@ func bao_vault_readDir(sH C.longlong, dir *C.char, after, fromId C.longlong, lim
 		return cResult(nil, 0, err)
 	}
 
-	list, err := s.ReadDir(C.GoString(dir), time.Unix(int64(after), 0), int64(fromId), int(limit))
+	list, err := s.ReadDir(C.GoString(dir), time.Unix(int64(after), 0), vault.FileId(fromId), int(limit))
 	core.End("bao_readDir returning: %v", list)
 
 	return cResult(list, 0, err)
@@ -1036,6 +1036,23 @@ func bao_vault_allocatedSize(sH C.longlong) C.Result {
 	size := s.AllocatedSize()
 	core.End("allocated size for vault %d: %d", sH, size)
 	return cResult(size, 0, nil)
+}
+
+// bao_vault_waitUpdates waits for updates for the specified bao.
+//
+//export bao_vault_waitUpdates
+func bao_vault_waitUpdates(sH C.longlong, timeoutMs C.longlong) C.Result {
+	core.TimeTrack()
+	core.Start("called with sH: %d, timeout: %dms", sH, timeoutMs)
+	s, err := vaults.Get(int64(sH))
+	if err != nil {
+		core.LogError("cannot get vault with handle %d", sH, err)
+		return cResult(nil, 0, err)
+	}
+
+	newUpdated := s.WaitUpdates(time.Duration(timeoutMs) * time.Millisecond)
+	core.End("bao_waitUpdates successful for vault %d", sH)
+	return cResult(newUpdated, 0, nil)
 }
 
 // bao_replica_open returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the vault data.
@@ -1330,7 +1347,7 @@ func bao_mailbox_receive(sH C.longlong, dir *C.char, since, fromId C.longlong) C
 		return cResult(nil, 0, err)
 	}
 
-	msgs, err := mailbox.Receive(s, C.GoString(dir), time.UnixMilli(int64(since)), int64(fromId))
+	msgs, err := mailbox.Receive(s, C.GoString(dir), time.UnixMilli(int64(since)), vault.FileId(fromId))
 	if err != nil {
 		core.LogError("cannot receive messages from vault %d", sH, err)
 		return cResult(nil, 0, err)

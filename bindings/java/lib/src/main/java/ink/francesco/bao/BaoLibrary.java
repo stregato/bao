@@ -59,6 +59,7 @@ public interface BaoLibrary extends Library {
     Result bao_vault_getAuthor(long baoH, String name);
     Result bao_vault_versions(long baoH, String name);
     Result bao_vault_allocatedSize(long baoH);
+    Result bao_vault_waitUpdates(long baoH, long timeoutMs);
 
     Result bao_replica_open(long baoH, int dbHandle);
     Result bao_replica_exec(long layerH, String query, String args);

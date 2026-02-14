@@ -71,9 +71,6 @@ func (ds *Replica) Sync() (int, error) {
 	core.Start("")
 	now := time.Now()
 
-	ds.execLock.Lock()
-	defer ds.execLock.Unlock()
-
 	ls, err := ds.listUnreadTransactions()
 	if err != nil {
 		return 0, core.Error(core.DbError, "cannot get transactions files", err)
@@ -84,16 +81,10 @@ func (ds *Replica) Sync() (int, error) {
 		return 0, core.Error(core.GenericError, "cannot read transactions", err)
 	}
 
-	if ds.transaction != nil {
-		t, err := ds.writeUpdates()
-		if err != nil {
-			return 0, core.Error(core.DbError, "cannot write updates in sql layer", err)
-		}
-		transactions = append(transactions, t) // add the current transaction to the list
+	transactions, err = ds.addCurrentTransaction(transactions)
+	if err != nil {
+		return 0, core.Error(core.DbError, "cannot write current transaction in replica", err)
 	}
-
-	ds.queryLock.Lock()
-	defer ds.queryLock.Unlock()
 
 	updates, err := ds.processTransactions(transactions)
 	if err != nil {
@@ -104,33 +95,42 @@ func (ds *Replica) Sync() (int, error) {
 	return len(updates), nil
 }
 
-func (ds *Replica) writeUpdates() (transaction, error) {
-	core.Start("writing updates for transaction with %d updates", len(ds.transaction.Updates))
+func (ds *Replica) addCurrentTransaction(transactions []transaction) ([]transaction, error) {
+	core.Start("transaction %p", ds.transaction)
 	now := time.Now()
+	ds.execLock.Lock()
+	if ds.transaction == nil {
+		ds.execLock.Unlock()
+		core.End("ds.transaction == nil")
+		return transactions, nil // no current transaction to add, return the original list
+	}
+
 	t := *ds.transaction
-	err := ds.transaction.tx.Rollback() // rollback the transaction to ensure it is not committed yet
+	ds.transaction = nil // reset the current transaction to nil before writing
+	ds.execLock.Unlock()
+
+	err := t.tx.Rollback() // rollback the transaction to ensure it is not committed yet
 	if err != nil {
-		return transaction{}, core.Error(core.GenericError, "cannot rollback transaction", err)
+		return nil, core.Error(core.GenericError, "cannot rollback transaction", err)
 	}
 
 	attrs, err := msgpack.Marshal(t)
 	if err != nil {
-		return transaction{}, core.Error(core.DbError, "cannot marshal transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return nil, core.Error(core.DbError, "cannot marshal transaction %d", t.Id, err)
 	}
 	attrs, err = core.GzipCompress(attrs)
 	if err != nil {
-		return transaction{}, core.Error(core.DbError, "cannot compress transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return nil, core.Error(core.DbError, "cannot compress transaction %d", t.Id, err)
 	}
 	name := strconv.FormatUint(core.SnowID(), 16) // generate a unique name for the transaction file
 	file, err := ds.vault.Write(path.Join(sqlLayerDir, name), "", attrs, 0, nil)
 	if err != nil {
-		return transaction{}, core.Error(core.DbError, "cannot write transaction %d in BaoQL.writeUpdates", ds.transaction.Id, err)
+		return nil, core.Error(core.DbError, "cannot write transaction %d", t.Id, err)
 	}
 
-	ds.transaction = nil // reset the transaction to nil after writing
-	t.Id = file.Id       // set the transaction Id from the file Id
-	core.End("name %s, elapsed %s", name, core.Since(now))
-	return t, nil
+	t.Id = file.Id // set the transaction Id from the file Id
+	core.End("name %s, elapsed %s, updates %d", name, core.Since(now), len(t.Updates))
+	return append(transactions, t), nil
 }
 
 func (ds *Replica) Cancel() error {
@@ -180,7 +180,7 @@ func (ds *Replica) readTransactionFiles(ls []vault.File) (transactions []transac
 			core.Error(core.GenericError, "cannot read transaction in replica", err)
 			continue
 		}
-		transaction.Id = max(fi.Id, transaction.Id) // set the transaction Id from the file Id
+		transaction.Id = fi.Id // set the transaction Id from the file Id
 		transactions = append(transactions, transaction)
 		n_updates += len(transaction.Updates)
 	}
@@ -197,8 +197,9 @@ func (ds *Replica) processTransactions(t []transaction) (updates []Update, err e
 			return nil, core.Error(core.GenericError, "cannot process transaction %d", transaction.Id, err)
 		}
 		updates = append(updates, transaction.Updates...)
+		ds.lastId = transaction.Id // update the last processed transaction Id
 	}
-	core.End("%d updates", len(updates))
+	core.End("%d updates, lastId %d", len(updates), ds.lastId)
 	return updates, nil
 }
 
@@ -223,14 +224,18 @@ func (ds *Replica) readTransaction(fi vault.File) (transaction, error) {
 
 func (ds *Replica) processTransaction(t transaction) error {
 	core.Start("id %d, %d updates", t.Id, len(t.Updates))
+
+	ds.queryLock.Lock()
 	for _, u := range t.Updates {
 		_, err := ds.db.Exec(u.Key, u.Args)
 		if err != nil {
+			ds.queryLock.Unlock()
 			return core.Error(core.GenericError, "cannot execute transaction %s", u.Key, err)
 		}
 	}
-	ds.lastId = int64(t.Id)
+	ds.queryLock.Unlock()
 
+	ds.lastId = t.Id
 	_, err := ds.vault.DB.Exec("INSERT_TRANSACTION_METADATA", sqlx.Args{"vault": ds.vault.ID, "id": t.Id,
 		"tm": t.Tm, "success": true})
 	if err != nil {

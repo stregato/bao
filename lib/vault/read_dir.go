@@ -10,7 +10,7 @@ import (
 
 type ReadDirOption uint64
 
-func (v *Vault) ReadDir(dir string, since time.Time, afterId int64, limit int) ([]File, error) {
+func (v *Vault) ReadDir(dir string, since time.Time, afterId FileId, limit int) ([]File, error) {
 	core.Start("dir %s, since %v, after %d, limit %d", dir, since, afterId, limit)
 	if limit <= 0 {
 		limit = 1 << 20

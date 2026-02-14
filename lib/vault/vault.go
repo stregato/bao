@@ -30,26 +30,25 @@ type Config struct {
 }
 
 type Vault struct {
-	ID             string             `json:"id"`             // Unique identifier for the vault, derived from URL and public ID
-	UserSecret     security.PrivateID `json:"userSecret"`     // User's private ID, used for operations that require user authentication
-	UserID         security.PublicID  `json:"userId"`         // User's public ID, used for public operations and access control
-	UserIDHash     uint64             `json:"-"`              // Hash of the public ID, used for quick lookups and comparisons
-	Author         security.PublicID  `json:"author"`         // Author of the vault, typically the public ID of the user who created it
-	DB             *sqlx.DB           `json:"-"`              // Database connection for storing and retrieving vault metadata
-	Config         Config             `json:"config"`         // Configuration settings for the vault, including retention policies and store.limits
-	Realm          Realm              `json:"realm"`          // Realm associated with the vault, used for namespacing and organization
-	WatchedFolders []string           `json:"watchedFolders"` // List of folders being watched for changes
+	ID         string             `json:"id"`         // Unique identifier for the vault, derived from URL and public ID
+	UserSecret security.PrivateID `json:"userSecret"` // User's private ID, used for operations that require user authentication
+	UserID     security.PublicID  `json:"userId"`     // User's public ID, used for public operations and access control
+	UserIDHash uint64             `json:"-"`          // Hash of the public ID, used for quick lookups and comparisons
+	Author     security.PublicID  `json:"author"`     // Author of the vault, typically the public ID of the user who created it
+	DB         *sqlx.DB           `json:"-"`          // Database connection for storing and retrieving vault metadata
+	Config     Config             `json:"config"`     // Configuration settings for the vault, including retention policies and store.limits
+	Realm      Realm              `json:"realm"`      // Realm associated with the vault, used for namespacing and organization
 
-	store              store.Store   // Storage backend for the vault, used for file operations
-	allocatedSize      int64         // Total allocated size for the vault, used for tracking store.usage
-	housekeepingTicker *time.Ticker  // Ticker for periodic housekeeping
-	stopSyncRelay      chan struct{} // Channel signaling vault closure
+	store              store.Store  // Storage backend for the vault, used for file operations
+	allocatedSize      int64        // Total allocated size for the vault, used for tracking store.usage
+	housekeepingTicker *time.Ticker // Ticker for periodic housekeeping
+	syncRelayCh        chan string  // Channel for receiving sync relay notifications, used to trigger synchronization when changes are detected
 
 	lastBlockChainSyncAt time.Time  // Timestamp of the last blockchain synchronization
 	lastCleanupAt        time.Time  // Timestamp of the last retention cleanup
 	lastSyncAt           time.Time  // Timestamp of the last sync operation
 	lastWaitFilesAt      time.Time  // Timestamp of the last files sync operation
-	watchedFoldersMu     sync.Mutex // Mutex for synchronizing access to watched folders
+	newFiles             *sync.Cond // Condition variable for signaling changes in watched folders
 
 	ioMu                sync.Mutex               // Mutex for synchronizing I/O operations
 	ioScheduleMap       map[FileId]chan struct{} // Map to track scheduled I/O operations by file I

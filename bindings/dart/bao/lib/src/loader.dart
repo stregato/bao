@@ -356,7 +356,9 @@ DynamicLibrary loadBaoLibrary() {
   throw Err(msg: 'Failed to load bao library for $arch');
 }
 
-Future<void> initBaoLibrary() async {
+// Initializes the Bao library by loading the dynamic library and setting up function bindings.
+// the concurrency parameter can be used to configure the number of concurrent operations the library can handle.
+Future<void> initBaoLibrary([int concurrency = 4]) async {
   var lib = loadBaoLibrary();
   freeC = lib.lookupFunction<FreeC, FreeCDart>('free');
 

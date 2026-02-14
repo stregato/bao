@@ -109,6 +109,12 @@ public class Vault {
         return raw.stream().map(FileInfo::fromMap).toList();
     }
 
+    public boolean waitUpdates(long timeoutMs) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_waitUpdates(hnd, timeoutMs);
+        r.check();
+        return r.bool();
+    }
+
     public void setAttribute(String name, String value, long options) throws Exception {
         Result r = BaoLibrary.instance.bao_vault_setAttribute(hnd, options, name, value);
         r.check();

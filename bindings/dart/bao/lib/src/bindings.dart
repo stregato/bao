@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
@@ -129,6 +130,8 @@ final Map<String, Handler> _handlers = <String, Handler>{
       Function.apply(libBaoVersions, args),
   'bao_vault_allocatedSize': (List<Object?> args) =>
       Function.apply(libBaoAllocatedSize, args),
+  'bao_vault_waitUpdates': (List<Object?> args) =>
+      Function.apply(libBaoWaitUpdates, args),
   'bao_replica_open': (List<Object?> args) =>
       Function.apply(libSqlLayerSqlLayer, args),
   'bao_replica_closeRows': (List<Object?> args) =>
@@ -215,6 +218,7 @@ late ArgsiSi libBaoDelete;
 late ArgsiS libBaoGetAuthor;
 late ArgsiS libBaoVersions;
 late Argsi libBaoAllocatedSize;
+late Argsii libBaoWaitUpdates;
 
 // SQL Layer functions
 late ArgsiI libSqlLayerSqlLayer;
@@ -298,7 +302,8 @@ void loadFunctions(DynamicLibrary lib) {
   libBaoVersions = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_versions");
   libBaoAllocatedSize =
       lib.lookupFunction<ArgsI, Argsi>("bao_vault_allocatedSize");
-
+  libBaoWaitUpdates =
+      lib.lookupFunction<ArgsII, Argsii>("bao_vault_waitUpdates");
     libSqlLayerSqlLayer = lib.lookupFunction<ArgsIi, ArgsiI>('bao_replica_open');
   libSqlLayerExec = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_exec');
   libSqlLayerQuery = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_query');
@@ -343,9 +348,14 @@ void _worker(SendPort mainSendPort) async {
     }
 
     try {
+      print('[FFI-WORKER] Received request: $name at ${DateTime.now().millisecondsSinceEpoch}');
       var nativeArgs = args.sublist(2).map(toNative).toList();
-      output.send(handler(nativeArgs).resolve());
+      final result = handler(nativeArgs).resolve();
+      print('[FFI-WORKER] Completed request: $name at ${DateTime.now().millisecondsSinceEpoch}');
+      output.send(result);
+      print('[FFI-WORKER] Sent response: $name at ${DateTime.now().millisecondsSinceEpoch}');
     } catch (e) {
+      print('[FFI-WORKER] Error in $name: $e');
       output.send(Result(0, Uint8List(0), Err(msg: e.toString())));
     } finally {
       freeNativePointers();
@@ -355,23 +365,79 @@ void _worker(SendPort mainSendPort) async {
 
 class Bindings {
   final inputs = <SendPort>[];
+  final workers = <int>[]; // Available workers
+  final busyWorkers = <int>[]; // Currently busy workers
+  Completer<void>? _lockCompleter;
 
   Future<void> start([int size = 4]) async {
     for (var i = 0; i < size; i++) {
       var rp = ReceivePort();
       await Isolate.spawn(_worker, rp.sendPort);
       inputs.add(await rp.first as SendPort);
+      workers.add(i); // Initially all workers are free
     }
   }
 
-// Round-robin dispatch
-  int next = -1;
+  Future<void> _acquireLock() async {
+    while (_lockCompleter != null) {
+      await _lockCompleter!.future;
+    }
+    _lockCompleter = Completer<void>();
+  }
+
+  void _releaseLock() {
+    final completer = _lockCompleter;
+    _lockCompleter = null;
+    completer?.complete();
+  }
 
   Future<Result> acall(String name, List<Object?> args) async {
-    next = (next + 1) % inputs.length;
+    await _acquireLock();
+    
+    // Try to get a free worker, with retries if all are busy
+    int selectedWorker = -1;
+    int retries = 0;
+    const maxRetries = 5;
+    const retryDelayMs = 10;
+    
+    while (selectedWorker == -1 && retries < maxRetries) {
+      if (workers.isNotEmpty) {
+        selectedWorker = workers.removeAt(0); // Take first free worker
+        break;
+      }
+      
+      // All workers busy, wait a bit and retry
+      retries++;
+      if (retries < maxRetries) {
+        _releaseLock();
+        await Future.delayed(Duration(milliseconds: retryDelayMs));
+        await _acquireLock();
+      }
+    }
+    
+    // If still no free worker after retries, queue on first busy worker
+    if (selectedWorker == -1) {
+      selectedWorker = busyWorkers[0];
+      print('[FFI-MAIN] WARNING: All workers busy after ${maxRetries * retryDelayMs}ms, queueing to worker $selectedWorker');
+    }
+    
+    busyWorkers.add(selectedWorker);
+    _releaseLock();
+    
+    final startTime = DateTime.now().millisecondsSinceEpoch;
+    print('[FFI-MAIN] Sending request: $name to worker $selectedWorker at $startTime (free: $workers, busy: $busyWorkers)');
     var output = ReceivePort();
-    inputs[next].send([name, output.sendPort, ...args]);
+    inputs[selectedWorker].send([name, output.sendPort, ...args]);
+    print('[FFI-MAIN] Waiting for response: $name at ${DateTime.now().millisecondsSinceEpoch}');
     var res = await output.first;
+    final endTime = DateTime.now().millisecondsSinceEpoch;
+    
+    await _acquireLock();
+    busyWorkers.remove(selectedWorker);
+    workers.add(selectedWorker); // Return to free pool
+    _releaseLock();
+    
+    print('[FFI-MAIN] Received response: $name at $endTime (took ${endTime - startTime}ms, free: $workers, busy: $busyWorkers)');
     output.close();
     return res as Result;
   }

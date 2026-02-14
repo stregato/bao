@@ -439,6 +439,19 @@ class Vault:
             return []
         return [FileInfo.from_dict(f) for f in result]
 
+    def wait_updates(self, timeout_ms: int = 0) -> bool:
+        '''
+        Wait for updates on the vault.
+        
+        :param self: Vault instance
+        :param timeout_ms: Timeout in milliseconds (0 for no timeout)
+        :type timeout_ms: int
+        :return: True if updates arrived, False if timeout occurred
+        :rtype: bool
+        '''
+        result = consume(lib.bao_vault_waitUpdates(self.hnd, timeout_ms))
+        return bool(result) if result is not None else False
+
     def sync(self):
         return consume(lib.bao_vault_sync(self.hnd))
 

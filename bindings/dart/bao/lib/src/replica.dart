@@ -80,7 +80,7 @@ class Replica {
 
   /// Synchronizes the SQL layer tables with the underlying storage.
   /// Returns an error if the synchronization fails.
-  Future<int> syncTables() async {
+  Future<int> sync() async {
     var res = await bindings.acall('bao_replica_sync', [hnd]);
     return res.integer;
   }

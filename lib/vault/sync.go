@@ -3,6 +3,7 @@ package vault
 import (
 	"database/sql"
 	"path"
+	"strconv"
 	"sync"
 	"time"
 
@@ -208,6 +209,11 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (File, error) {
 		return File{}, core.Error(core.FileError, "cannot decode file head %s", n, err)
 	}
 
+	id, err := strconv.ParseUint(storeName, 36, 64)
+	if err != nil {
+		return File{}, core.Error(core.FileError, "cannot parse file ID from store name %s", storeName, err)
+	}
+	file.Id = FileId(id)
 	file.AllocatedSize = int64(len(head)) + file.Size
 	file.StoreDir = storeDir
 	file.StoreName = storeName
@@ -216,6 +222,9 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (File, error) {
 	if err != nil {
 		return File{}, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
 	}
+	v.newFiles.L.Lock()
+	v.newFiles.Broadcast()
+	v.newFiles.L.Unlock()
 
 	v.allocatedSize += file.AllocatedSize
 	core.End("file %s, size %d, allocated %d, modTime %s", file.Name, file.Size, file.AllocatedSize, file.ModTime)
@@ -231,6 +240,7 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 	}
 
 	r, err := v.DB.Exec("SET_FILE", sqlx.Args{
+		"id":             file.Id,
 		"vault":          v.ID,
 		"dir":            dir,
 		"storeDir":       file.StoreDir,
@@ -252,12 +262,13 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 	}
 	id, err := r.LastInsertId()
 	if err != nil {
-		return File{}, core.Error(core.DbError, "cannot get last insert id for file %s/%s", dir, name, err)
+		return File{}, core.Error(core.DbError, "cannot get file ID for %s/%s", dir, name, err)
 	}
+	file.Id = FileId(id)
 	count, _ := r.RowsAffected()
 	if dir == "" || count == 0 {
 		core.End("file %s is a directory or already exists, skipping directory set", file.Name)
-		return File{Id: FileId(id)}, nil
+		return File{Id: file.Id}, nil
 	}
 
 	dir, name = path.Split(dir)
@@ -270,8 +281,7 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 			return File{}, core.Error(core.DbError, "cannot set directory %s/%s", dir, name, err)
 		}
 	}
-	file.Id = FileId(id)
 
-	core.End("")
+	core.End("file id %d", file.Id)
 	return file, err
 }

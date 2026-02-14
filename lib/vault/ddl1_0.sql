@@ -266,7 +266,8 @@ INSERT INTO transaction_metadata (vault, id, tm, success) VALUES (:vault, :id, :
 SELECT id, tm FROM transaction_metadata WHERE vault=:vault ORDER BY id DESC LIMIT :limit;
 
 -- GET_LAST_TRANSACTION_METADATA_ID 1.0
-SELECT id FROM transaction_metadata WHERE vault=:vault ORDER BY id DESC LIMIT 1;
+SELECT COALESCE(MAX(id), 0) FROM transaction_metadata WHERE vault=:vault;
+
 
 -- DELETE_TRANSACTION_METADATA 1.0
 DELETE FROM transaction_metadata WHERE vault=:vault AND tm < :tm;

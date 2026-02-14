@@ -21,7 +21,7 @@ type transaction struct {
 type Replica struct {
 	vault *vault.Vault
 	//	lastIds     map[uint64]struct{} // lastIds is a list of last ids for each table
-	lastId      int64        // lastId is the last id used for the transaction
+	lastId      vault.FileId // lastId is the last id used for the transaction
 	db          *sqlx.DB     // db is the database connection for the layer
 	execLock    sync.Mutex   // execLock is a lock for executing SQL statements
 	queryLock   sync.Mutex   // queryLock is a lock for executing SQL queries
@@ -30,17 +30,17 @@ type Replica struct {
 
 const sqlLayerDir = "replica"
 
-func Open(vault *vault.Vault, db *sqlx.DB) (*Replica, error) {
-	core.Start("vault %s", vault.ID)
+func Open(v *vault.Vault, db *sqlx.DB) (*Replica, error) {
+	core.Start("vault %s", v.ID)
 
-	lastId, err := readLastTransactionsId(vault.DB, vault.String())
+	lastId, err := readLastTransactionsId(v.DB, v.ID)
 	if err != nil {
 		return nil, core.Error(core.GenericError, "cannot read last transaction id", err)
 	}
 
-	core.End("")
+	core.End("lastId %d", lastId)
 
-	return &Replica{vault: vault, lastId: lastId, db: db, execLock: sync.Mutex{}, queryLock: sync.Mutex{}, transaction: nil}, nil
+	return &Replica{vault: v, lastId: vault.FileId(lastId), db: db, execLock: sync.Mutex{}, queryLock: sync.Mutex{}, transaction: nil}, nil
 }
 
 func readLastTransactionsId(db *sqlx.DB, vaultID string) (lastId int64, err error) {

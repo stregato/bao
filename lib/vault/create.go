@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -44,16 +45,16 @@ func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *s
 
 	id := fmt.Sprintf("%s@%s", realm.String(), store.ID())
 	v := Vault{
-		ID:         id,
-		Realm:      realm,
-		UserSecret: userSecret,
-		UserID:     userID,
-		UserIDHash: userIDHash,
-		Author:     userID,
-		DB:         db,
-		Config:     config,
-		store:      store,
-		//		lastChangeScheduledFolders: make(map[string]bool),
+		ID:            id,
+		Realm:         realm,
+		UserSecret:    userSecret,
+		UserID:        userID,
+		UserIDHash:    userIDHash,
+		Author:        userID,
+		DB:            db,
+		Config:        config,
+		store:         store,
+		newFiles:      sync.NewCond(&sync.Mutex{}),
 		lastCleanupAt: time.Now(),
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
 		ioScheduleMap: make(map[FileId]chan struct{}),
