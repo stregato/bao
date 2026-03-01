@@ -183,7 +183,7 @@ UPDATE files SET flags = :flagsM WHERE ID = :id
 INSERT INTO files (vault, storeDir, storeName, dir, name, "group", modTime, size, allocatedSize, flags, authorId, keyId, attrs)
 SELECT :vault, "", "", :dir, :name, :group, 0, 0, 0, 0, 0, 0, NULL
 WHERE NOT EXISTS (
-    SELECT 1 FROM files WHERE vault = :vault AND dir = :dir AND name = :name AND storeDir = :storeDir AND storeName = :storeName AND modTime = 0
+    SELECT 1 FROM files WHERE vault = :vault AND dir = :dir AND name = :name AND modTime = 0
 );
 
 -- GET_FILES_WITH_FLAGS 1.0

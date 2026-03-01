@@ -535,8 +535,17 @@ class Replica:
     def fetch_one(self, query: str, args: Dict[str, Any]):
         return consume(lib.bao_replica_fetchOne(self.hnd, e8(query), j8(args)))
 
-    def sync(self) -> int:
-        r = lib.bao_replica_sync(self.hnd)
+    def sync(self, *dests: PublicID) -> int:
+        """Synchronize SQL layer with vault storage.
+        
+        Args:
+            *dests: Optional destination user IDs to sync with (varargs)
+            
+        Returns:
+            Number of updates processed
+        """
+        dest_strs = [str(d) for d in dests]
+        r = lib.bao_replica_sync(self.hnd, j8(dest_strs))
         return consume(r)
 
     def cancel(self):

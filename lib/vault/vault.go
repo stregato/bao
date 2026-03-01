@@ -48,7 +48,8 @@ type Vault struct {
 	lastCleanupAt        time.Time  // Timestamp of the last retention cleanup
 	lastSyncAt           time.Time  // Timestamp of the last sync operation
 	lastWaitFilesAt      time.Time  // Timestamp of the last files sync operation
-	newFiles             *sync.Cond // Condition variable for signaling changes in watched folders
+	newFiles             *sync.Cond // Condition variable for signaling changes in watched folders; also protects interrupted flag
+	interrupted          bool       // Flag indicating if an interrupt was signaled (protected by newFiles.L)
 
 	ioMu                sync.Mutex               // Mutex for synchronizing I/O operations
 	ioScheduleMap       map[FileId]chan struct{} // Map to track scheduled I/O operations by file I

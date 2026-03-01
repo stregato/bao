@@ -28,7 +28,7 @@ type Replica struct {
 	transaction *transaction // transaction is the current transaction for the layer
 }
 
-const sqlLayerDir = "replica"
+const replicaDir = "replica"
 
 func Open(v *vault.Vault, db *sqlx.DB) (*Replica, error) {
 	core.Start("vault %s", v.ID)

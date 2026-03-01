@@ -35,6 +35,7 @@ func encodeFile(file File, authorPrivateID security.PrivateID) ([]byte, error) {
 		return nil, core.Error(core.FileError, "cannot sign file head in encodeHead", err)
 	}
 	data := append(sign, buf...)
+	core.End("file %s, shortID %d, data length %d", file.Name, shortID, len(data))
 	return data, nil
 }
 
@@ -82,7 +83,7 @@ func decodeFile(data []byte, getUserId func(shortID uint64) (userID security.Pub
 		return File{}, core.Error(core.FileError, "signature verification failed for file head", err)
 	}
 
-	core.End("successfully decoded file head for %s", file.Name)
+	core.End("file %s", file.Name)
 	return file, nil
 }
 

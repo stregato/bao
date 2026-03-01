@@ -69,7 +69,7 @@ public interface BaoLibrary extends Library {
     Result bao_replica_next(long rowsH);
     Result bao_replica_current(long rowsH);
     Result bao_replica_closeRows(long rowsH);
-    Result bao_replica_sync(long layerH);
+    Result bao_replica_sync(long layerH, String dir);
     Result bao_replica_cancel(long layerH);
 
     Result bao_mailbox_send(long baoH, String dir, String group, String messageJson);

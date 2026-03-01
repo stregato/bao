@@ -10,6 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/stregato/bao/lib/core"
+	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
 	"github.com/stregato/bao/lib/vault"
 	"github.com/vmihailenco/msgpack/v5"
@@ -63,29 +64,64 @@ func (ds *Replica) Exec(key string, args sqlx.Args) (sql.Result, error) {
 	return res, nil
 }
 
-// Sync writes the current transaction to the store.and reads all transactions that are not yet processed.
+// Sync writes the current transaction to the store and reads all transactions that are not yet processed.
 // It executes the updates in the transactions and commits them to the database.
-// It runs two goroutines: one for writing the updates and one for reading and executing the transactions.
 // It returns the number of updates processed or an error if something goes wrong.
-func (ds *Replica) Sync() (int, error) {
+func (ds *Replica) Sync(dests ...security.PublicID) (int, error) {
 	core.Start("")
 	now := time.Now()
 
-	ls, err := ds.listUnreadTransactions()
-	if err != nil {
-		return 0, core.Error(core.DbError, "cannot get transactions files", err)
+	// Validate dests based on realm
+	if ds.vault.Realm == vault.Home {
+		if len(dests) == 0 {
+			return 0, core.Error(core.NotImplemented, "home realm requires at least one destination")
+		}
+	} else {
+		if len(dests) > 0 {
+			return 0, core.Error(core.NotImplemented, "non-home realm requires empty destinations")
+		}
 	}
 
-	transactions, err := ds.readTransactionFiles(ls)
-	if err != nil {
-		return 0, core.Error(core.GenericError, "cannot read transactions", err)
+	// Determine read directory, write directories, and which dir to use for transaction Id
+	var readDir string
+	var writeDirs []string
+
+	if ds.vault.Realm == vault.Home {
+		// Write to all dests
+		for _, dest := range dests {
+			writeDirs = append(writeDirs, path.Join(dest.String(), replicaDir))
+		}
+		// Read only if UserID is in dests (user can only read from their own folder)
+		if slices.Contains(dests, ds.vault.UserID) {
+			readDir = path.Join(ds.vault.UserID.String(), replicaDir)
+		}
+	} else {
+		// Non-home realm: read and write to replicaDir
+		readDir = replicaDir
+		writeDirs = []string{replicaDir}
 	}
 
-	transactions, err = ds.addCurrentTransaction(transactions)
+	// List and read unread transactions only if needed
+	var transactions []transaction
+	if readDir != "" {
+		ls, err := ds.listUnreadTransactions(readDir)
+		if err != nil {
+			return 0, core.Error(core.DbError, "cannot get transactions files", err)
+		}
+
+		transactions, err = ds.readTransactionFiles(ls)
+		if err != nil {
+			return 0, core.Error(core.GenericError, "cannot read transactions", err)
+		}
+	}
+
+	// Add current transaction to all write directories
+	transactions, err := ds.addCurrentTransactionToAll(writeDirs, transactions)
 	if err != nil {
 		return 0, core.Error(core.DbError, "cannot write current transaction in replica", err)
 	}
 
+	// Process all transactions
 	updates, err := ds.processTransactions(transactions)
 	if err != nil {
 		return 0, core.Error(core.GenericError, "cannot process transactions", err)
@@ -95,7 +131,7 @@ func (ds *Replica) Sync() (int, error) {
 	return len(updates), nil
 }
 
-func (ds *Replica) addCurrentTransaction(transactions []transaction) ([]transaction, error) {
+func (ds *Replica) addCurrentTransactionToAll(dirs []string, transactions []transaction) ([]transaction, error) {
 	core.Start("transaction %p", ds.transaction)
 	now := time.Now()
 	ds.execLock.Lock()
@@ -114,6 +150,7 @@ func (ds *Replica) addCurrentTransaction(transactions []transaction) ([]transact
 		return nil, core.Error(core.GenericError, "cannot rollback transaction", err)
 	}
 
+	// Marshal and compress once
 	attrs, err := msgpack.Marshal(t)
 	if err != nil {
 		return nil, core.Error(core.DbError, "cannot marshal transaction %d", t.Id, err)
@@ -122,14 +159,21 @@ func (ds *Replica) addCurrentTransaction(transactions []transaction) ([]transact
 	if err != nil {
 		return nil, core.Error(core.DbError, "cannot compress transaction %d", t.Id, err)
 	}
+
+	// Write to all directories
 	name := strconv.FormatUint(core.SnowID(), 16) // generate a unique name for the transaction file
-	file, err := ds.vault.Write(path.Join(sqlLayerDir, name), "", attrs, 0, nil)
-	if err != nil {
-		return nil, core.Error(core.DbError, "cannot write transaction %d", t.Id, err)
+	for _, dir := range dirs {
+		file, err := ds.vault.Write(path.Join(dir, name), "", attrs, 0, nil)
+		if err != nil {
+			return nil, core.Error(core.DbError, "cannot write transaction %d to %s", t.Id, dir, err)
+		}
+		if ds.vault.Realm != vault.Home || strings.HasPrefix(ds.vault.UserID.String()+"/", dir) {
+			// For non-home realm, or for home realm when writing to user's own folder, use the file Id for tracking
+			t.Id = file.Id
+		}
 	}
 
-	t.Id = file.Id // set the transaction Id from the file Id
-	core.End("name %s, elapsed %s, updates %d", name, core.Since(now), len(t.Updates))
+	core.End("name %s, elapsed %s, updates %d, dirs %d", name, core.Since(now), len(t.Updates), len(dirs))
 	return append(transactions, t), nil
 }
 
@@ -152,9 +196,9 @@ func (ds *Replica) Cancel() error {
 	return nil
 }
 
-func (ds *Replica) listUnreadTransactions() (ls []vault.File, err error) {
+func (ds *Replica) listUnreadTransactions(dir string) (ls []vault.File, err error) {
 	core.Start("")
-	files, err := ds.vault.ReadDir(sqlLayerDir, time.Time{}, ds.lastId, 0)
+	files, err := ds.vault.ReadDir(dir, time.Time{}, ds.lastId, 0)
 	if err != nil {
 		if err == sqlx.ErrNoRows {
 			core.End("no transaction files")

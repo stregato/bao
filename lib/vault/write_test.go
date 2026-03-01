@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/sqlx"
@@ -106,6 +107,7 @@ func TestWritePublic(t *testing.T) {
 }
 
 func TestWriteHome(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
 	alice, aliceSecret := security.NewKeyPairMust()
 	bob, bobSecret := security.NewKeyPairMust()
 
@@ -180,6 +182,39 @@ func TestWriteAttrs(t *testing.T) {
 	core.TestErr(t, err, "ReadDir failed: %v")
 	core.Assert(t, len(files) == 0, "Expected no files after delete")
 	s.Close()
+}
+
+func TestWriteNestedPath(t *testing.T) {
+	alice := security.NewPrivateIDMust()
+	db := sqlx.NewTestDB(t, "vault_nested.db", "")
+	store := store.LoadTestStore(t, "test")
+	defer store.Close()
+
+	v, err := Create(Users, alice, store, db, Config{})
+	core.TestErr(t, err, "Create failed: %v")
+
+	tmpFile := t.TempDir() + "/nested.txt"
+	err = os.WriteFile(tmpFile, []byte("Nested content"), 0644)
+	core.TestErr(t, err, "WriteFile failed: %v")
+
+	file, err := v.Write("level1/level2/nested.txt", tmpFile, nil, 0, nil)
+	core.TestErr(t, err, "Write failed: %v")
+
+	_, err = v.WaitFiles(context.Background(), file.Id)
+	core.TestErr(t, err, "WaitFiles failed: %v")
+
+	f, err := v.Stat("level1/level2/nested.txt")
+	core.TestErr(t, err, "Stat failed: %v")
+	core.Assert(t, f.Name == "level1/level2/nested.txt", "Expected nested file name")
+	core.Assert(t, f.IsDir == false, "Expected regular file")
+
+	entries, err := v.ReadDir("level1/level2", time.Time{}, 0, 0)
+	core.TestErr(t, err, "ReadDir failed: %v")
+	core.Assert(t, len(entries) == 1, "Expected one file in nested directory")
+	core.Assert(t, entries[0].Name == "nested.txt", "Expected nested file entry")
+
+	v.Close()
+	db.Close()
 }
 
 func TestWriteWithSyncRelay(t *testing.T) {

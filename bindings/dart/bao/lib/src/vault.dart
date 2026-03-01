@@ -242,4 +242,10 @@ class Vault {
     var res = await bindings.acall('bao_vault_waitUpdates', [hnd, timeoutMs]);
     return res.boolean;
   }
+
+  /// Interrupts any pending waitUpdates() call on this vault.
+  /// Safe to call even if no wait is in progress.
+  Future<void> interruptWait() async {
+    await bindings.acall('bao_vault_interruptWait', [hnd]);
+  }
 }

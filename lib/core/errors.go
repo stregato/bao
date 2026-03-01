@@ -15,17 +15,18 @@ import (
 
 // Error code constants for semantic error categorization
 const (
-	DbError      = "DbError"
-	FileError    = "FileError"
-	ParseError   = "ParseError"
-	EncodeError  = "EncodeError"
-	AuthError    = "AuthError"
-	AccessDenied = "AccessDenied"
-	NetError     = "NetError"
-	ConfigError  = "ConfigError"
-	TestError    = "TestError"
-	GenericError = "GenericError"
-	Timeout      = "Timeout"
+	DbError        = "DbError"
+	FileError      = "FileError"
+	ParseError     = "ParseError"
+	EncodeError    = "EncodeError"
+	AuthError      = "AuthError"
+	AccessDenied   = "AccessDenied"
+	NetError       = "NetError"
+	ConfigError    = "ConfigError"
+	TestError      = "TestError"
+	GenericError   = "GenericError"
+	Timeout        = "Timeout"
+	NotImplemented = "NotImplemented"
 )
 
 const MaxRecentErrors = 16000

@@ -1055,6 +1055,23 @@ func bao_vault_waitUpdates(sH C.longlong, timeoutMs C.longlong) C.Result {
 	return cResult(newUpdated, 0, nil)
 }
 
+// bao_vault_interruptWait signals any pending waitUpdates() call to return immediately.
+//
+//export bao_vault_interruptWait
+func bao_vault_interruptWait(sH C.longlong) C.Result {
+	core.TimeTrack()
+	core.Start("called with sH: %d", sH)
+	s, err := vaults.Get(int64(sH))
+	if err != nil {
+		core.LogError("cannot get vault with handle %d", sH, err)
+		return cResult(nil, 0, err)
+	}
+
+	s.InterruptWait()
+	core.End("bao_interruptWait successful for vault %d", sH)
+	return cResult(true, 0, nil)
+}
+
 // bao_replica_open returns a SQL like layer for the specified bao. The layer is used to execute SQL like commands on the vault data.
 //
 //export bao_replica_open
@@ -1145,7 +1162,7 @@ func bao_replica_query(dtH C.longlong, keyC, argsC *C.char) C.Result {
 // bao_replica_sync synchronizes the SQL tables with the vault data.
 //
 //export bao_replica_sync
-func bao_replica_sync(dtH C.longlong) C.Result {
+func bao_replica_sync(dtH C.longlong, destsC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("")
 	replica, err := replicas.Get(int64(dtH))
@@ -1154,7 +1171,14 @@ func bao_replica_sync(dtH C.longlong) C.Result {
 		return cResult(nil, 0, err)
 	}
 
-	updates, err := replica.Sync()
+	var dests []security.PublicID
+	err = cInput(err, destsC, &dests)
+	if err != nil {
+		core.LogError("cannot convert input for sync with dests %v", dests, err)
+		return cResult(nil, 0, err)
+	}
+
+	updates, err := replica.Sync(dests...)
 	if err != nil {
 		core.LogError("cannot synchronize tables in sql layer %d", dtH, err)
 		return cResult(nil, 0, err)

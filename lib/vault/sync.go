@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	}
 
 	var errX error
+	skippedDecodeErrors := 0
 	for _, segment := range segments {
 		storeDir := path.Join(baseDir, segment)
 		ls, err2 := v.store.ReadDir(path.Join(storeDir, "h"), store.Filter{})
@@ -114,6 +116,11 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 				newFiles = append(newFiles, v)
 			case error:
 				if v != nil {
+					if strings.Contains(v.Error(), "cannot decode file head") {
+						skippedDecodeErrors++
+						core.Info("skipping unreadable file in batch %s due to decode failure: %v", segment, v)
+						continue
+					}
 					errX = v
 					core.Info("error synchronizing file in batch %s: %v", segment, v)
 				}
@@ -122,6 +129,9 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	}
 	if errX != nil {
 		return nil, core.Error(core.GenericError, "errors occurred during synchronization", errX)
+	}
+	if skippedDecodeErrors > 0 {
+		core.Info("vault sync skipped %d unreadable files due to decode errors", skippedDecodeErrors)
 	}
 
 	core.End("synchronized vault %s in %s, %d new files", v.ID, time.Since(now), len(newFiles))

@@ -3,6 +3,7 @@ package ink.francesco.bao;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Iterator;
 import java.util.Map;
+import ink.francesco.bao.IDs.PublicID;
 
 public class Replica {
 
@@ -26,8 +27,13 @@ public class Replica {
         return new Rows(res.hnd);
     }
 
-    public void syncTables() {
-        BaoLibrary.instance.bao_replica_sync(hnd).check();
+    public void sync(PublicID... dests) throws Exception {
+        String[] destStrs = new String[dests.length];
+        for (int i = 0; i < dests.length; i++) {
+            destStrs[i] = dests[i].toString();
+        }
+        String destsJson = mapper.writeValueAsString(destStrs);
+        BaoLibrary.instance.bao_replica_sync(hnd, destsJson).check();
     }
 
     public void cancel() {

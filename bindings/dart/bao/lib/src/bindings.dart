@@ -132,6 +132,8 @@ final Map<String, Handler> _handlers = <String, Handler>{
       Function.apply(libBaoAllocatedSize, args),
   'bao_vault_waitUpdates': (List<Object?> args) =>
       Function.apply(libBaoWaitUpdates, args),
+  'bao_vault_interruptWait': (List<Object?> args) =>
+      Function.apply(libBaoInterruptWait, args),
   'bao_replica_open': (List<Object?> args) =>
       Function.apply(libSqlLayerSqlLayer, args),
   'bao_replica_closeRows': (List<Object?> args) =>
@@ -219,6 +221,7 @@ late ArgsiS libBaoGetAuthor;
 late ArgsiS libBaoVersions;
 late Argsi libBaoAllocatedSize;
 late Argsii libBaoWaitUpdates;
+late Argsi libBaoInterruptWait;
 
 // SQL Layer functions
 late ArgsiI libSqlLayerSqlLayer;
@@ -226,7 +229,7 @@ late ArgsiSS libSqlLayerExec;
 late ArgsiSS libSqlLayerQuery;
 late ArgsiSSi libSqlLayerFetch;
 late ArgsiSS libSqlLayerFetchOne;
-late Argsi libSqlLayerSyncTables;
+late ArgsiS libSqlLayerSyncTables;
 late Argsi libSqlLayerCancel;
 late Argsi libSqlLayerNext;
 late Argsi libSqlLayerCurrent;
@@ -304,6 +307,8 @@ void loadFunctions(DynamicLibrary lib) {
       lib.lookupFunction<ArgsI, Argsi>("bao_vault_allocatedSize");
   libBaoWaitUpdates =
       lib.lookupFunction<ArgsII, Argsii>("bao_vault_waitUpdates");
+  libBaoInterruptWait =
+      lib.lookupFunction<ArgsI, Argsi>("bao_vault_interruptWait");
     libSqlLayerSqlLayer = lib.lookupFunction<ArgsIi, ArgsiI>('bao_replica_open');
   libSqlLayerExec = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_exec');
   libSqlLayerQuery = lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_query');
@@ -312,7 +317,7 @@ void loadFunctions(DynamicLibrary lib) {
   libSqlLayerFetchOne =
       lib.lookupFunction<ArgsISS, ArgsiSS>('bao_replica_fetchOne');
   libSqlLayerSyncTables =
-      lib.lookupFunction<ArgsI, Argsi>('bao_replica_sync');
+      lib.lookupFunction<ArgsIS, ArgsiS>('bao_replica_sync');
   libSqlLayerCancel = lib.lookupFunction<ArgsI, Argsi>('bao_replica_cancel');
   libSqlLayerNext = lib.lookupFunction<ArgsI, Argsi>('bao_replica_next');
   libSqlLayerCurrent =

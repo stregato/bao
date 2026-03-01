@@ -8,14 +8,26 @@ func (v *Vault) WaitUpdates(timeout time.Duration) bool {
 	go func() {
 		v.newFiles.L.Lock()
 		v.newFiles.Wait()
+
+		// Check if this wake was due to interrupt (still holding lock)
+		interrupted := v.interrupted
+		v.interrupted = false
 		v.newFiles.L.Unlock()
-		done <- true
+
+		done <- !interrupted
 	}()
 
 	select {
-	case <-done:
-		return true // file arrived
+	case result := <-done:
+		return result
 	case <-time.After(timeout):
 		return false // timeout
 	}
+}
+
+func (v *Vault) InterruptWait() {
+	v.newFiles.L.Lock()
+	v.interrupted = true
+	v.newFiles.L.Unlock()
+	v.newFiles.Broadcast()
 }

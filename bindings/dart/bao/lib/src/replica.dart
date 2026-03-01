@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:bao/src/bindings.dart';
 import 'package:bao/src/vault.dart';
 import 'package:bao/src/db.dart';
+import 'package:bao/src/identity.dart';
 
 class Rows {
   int hnd;
@@ -77,11 +78,12 @@ class Replica {
         'bao_replica_fetchOne', [hnd, query, jsonEncode(args)]);
     return res.list;
   }
-
   /// Synchronizes the SQL layer tables with the underlying storage.
-  /// Returns an error if the synchronization fails.
-  Future<int> sync() async {
-    var res = await bindings.acall('bao_replica_sync', [hnd]);
+  /// Optionally specify destination user IDs to sync with.
+  /// Returns the number of updates processed, or an error if synchronization fails.
+  Future<int> sync([List<PublicID> dests = const []]) async {
+    final destStrs = dests.map((id) => id.toString()).toList();
+    var res = await bindings.acall('bao_replica_sync', [hnd, jsonEncode(destStrs)]);
     return res.integer;
   }
 
