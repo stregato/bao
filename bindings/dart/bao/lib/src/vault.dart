@@ -37,11 +37,6 @@ class AccessChange {
   }
 }
 
-typedef Realm = String;
-const Realm users = 'users';
-const Realm home = 'home';
-const Realm all = 'all';
-
 /// Represents a Bao instance with its handle, author, and URL.
 /// Provides methods to create, open, close, and manage the vault.
 class Vault {
@@ -50,7 +45,6 @@ class Vault {
   late PrivateID userSecret;
   late PublicID userId;
   late PublicID author;
-  Realm realm = '';
   String url = '';
   Map<String, dynamic> config = {};
   StoreConfig storeConfig = const StoreConfig();
@@ -74,7 +68,6 @@ class Vault {
     }
     s.author = PublicID(m['author'] as String? ?? '');
     s.config = m['config'] ?? {};
-    s.realm = m['realm'] ?? '';
     return s;
   }
 
@@ -82,20 +75,20 @@ class Vault {
   /// The config parameter is a map of configuration options (see Go vault.Config).
   /// Returns a tuple containing the created Bao and an error message if any.
   static Future<Vault> create(
-      Realm realm, PrivateID identity, Store store, DB db,
+      PrivateID identity, Store store, DB db,
       {Config? config}) async {
     var configMap = config?.toJson() ?? {};
     var res = await bindings.acall(
-        'bao_vault_create', [realm, identity, store.hnd, db.hnd, configMap]);
+        'bao_vault_create', ["", identity, store.hnd, db.hnd, configMap]);
     return fromResult(res);
   }
 
   /// Opens an existing vault with the given identity and author.
   /// Returns the opened vault or throws if opening fails.
   static Future<Vault> open(
-      Realm realm, PrivateID identity, PublicID author, Store store, DB db) async {
+      PrivateID identity, PublicID author, Store store, DB db) async {
     var res = await bindings.acall(
-        'bao_vault_open', [realm, identity, author, store.hnd, db.hnd]);
+        'bao_vault_open', ["", identity, author, store.hnd, db.hnd]);
     return fromResult(res);
   }
 
@@ -118,7 +111,7 @@ class Vault {
     res.throwIfError();
   }
 
-  /// Retrieves the access permissions for the realm.
+  /// Retrieves the access permissions for the vault.
   Future<Accesses> getAccesses() async {
     var res = await bindings.acall('bao_vault_getAccesses', [hnd]);
     return res.map.map((k, v) => MapEntry<PublicID, int>(PublicID(k), v));

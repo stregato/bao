@@ -26,7 +26,7 @@ func TestExec(t *testing.T) {
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer s.Close()
 
-	v, err := vault.Create(vault.Users, aliceSecret, s, db, vault.Config{})
+	v, err := vault.Create(aliceSecret, s, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = v.SyncAccess(0,
@@ -84,7 +84,7 @@ func TestExec(t *testing.T) {
 	dataDb2 := sqlx.NewTestDB(t, "vault4.db", testDdl)
 	s = store.LoadTestStore(t, "test")
 
-	v, err = vault.Open(vault.Users, bobSecret, alice, s, db2)
+	v, err = vault.Open(bobSecret, alice, s, db2)
 	core.TestErr(t, err, "cannot open vault: %v")
 
 	replica, err = Open(v, dataDb2)
@@ -115,6 +115,46 @@ func TestExec(t *testing.T) {
 	s.Close()
 }
 
+func TestSyncWithECDestinationsUsesMaxLastID(t *testing.T) {
+	_, aliceSecret := security.NewKeyPairMust()
+	bob := security.NewPrivateIDMust().PublicIDMust()
+	charlie := security.NewPrivateIDMust().PublicIDMust()
+
+	db := sqlx.NewTestDB(t, "bao_ec_dests.db", "")
+	dataDb := sqlx.NewTestDB(t, "vault_ec_dests.db", testDdl)
+	s, err := store.Open(store.LoadTestConfig(t, "test"))
+	core.TestErr(t, err, "cannot open store: %v", err)
+	defer s.Close()
+
+	v, err := vault.Create(aliceSecret, s, db, vault.Config{})
+	core.TestErr(t, err, "Create failed: %v")
+
+	replica, err := Open(v, dataDb)
+	core.TestErr(t, err, "cannot open replica: %v")
+
+	_, err = replica.Exec("INSERT_TEST_DATA", sqlx.Args{"msg": "hello ec fanout", "cnt": 1, "ratio": 0.5, "bin": []byte{1}})
+	core.TestErr(t, err, "cannot insert test data: %v")
+
+	updates, err := replica.Sync(bob, charlie)
+	core.TestErr(t, err, "cannot sync with ec destinations: %v")
+	core.Assert(t, updates == 1, "expected 1 update, got %d", updates)
+
+	// The first sync writes two destination files for the same transaction.
+	// lastId must advance to the max written file ID, otherwise the next sync replays leftovers.
+	updates, err = replica.Sync()
+	core.TestErr(t, err, "cannot sync after ec fanout: %v")
+	core.Assert(t, updates == 0, "expected 0 updates after max lastId advancement, got %d", updates)
+
+	rows, err := replica.Fetch("SELECT_TEST_DATA", sqlx.Args{}, 1000)
+	core.TestErr(t, err, "cannot select test data: %v")
+	core.Assert(t, len(rows) == 1, "expected 1 row, got %d", len(rows))
+	core.Assert(t, rows[0][0] == "hello ec fanout", "unexpected row value: %s", rows[0][0])
+
+	v.Close()
+	db.Close()
+	dataDb.Close()
+}
+
 func TestExecAliceBobTogether(t *testing.T) {
 	logrus.SetLevel(logrus.InfoLevel)
 	alice, aliceSecret := security.NewKeyPairMust()
@@ -127,7 +167,7 @@ func TestExecAliceBobTogether(t *testing.T) {
 	defer s.Close()
 
 	// Create vault for Alice
-	vAlice, err := vault.Create(vault.Users, aliceSecret, s, db, vault.Config{})
+	vAlice, err := vault.Create(aliceSecret, s, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	// Grant Bob read-write access
@@ -141,7 +181,7 @@ func TestExecAliceBobTogether(t *testing.T) {
 	dataDb2 := sqlx.NewTestDB(t, "vault4.db", testDdl)
 	s2 := store.LoadTestStore(t, "test")
 
-	vBob, err := vault.Open(vault.Users, bobSecret, alice, s2, db2)
+	vBob, err := vault.Open(bobSecret, alice, s2, db2)
 	core.TestErr(t, err, "cannot open vault: %v")
 
 	replicaBob, err := Open(vBob, dataDb2)
@@ -219,10 +259,10 @@ func TestExecAliceBobTogether(t *testing.T) {
 	vAlice.Close()
 	vBob.Close()
 
-	vAlice, err = vault.Open(vault.Users, aliceSecret, alice, s, db)
+	vAlice, err = vault.Open(aliceSecret, alice, s, db)
 	core.TestErr(t, err, "cannot reopen Alice's vault: %v", err)
 
-	vBob, err = vault.Open(vault.Users, bobSecret, alice, s2, db2)
+	vBob, err = vault.Open(bobSecret, alice, s2, db2)
 	core.TestErr(t, err, "cannot reopen Bob's vault: %v", err)
 
 	replicaAlice, err = Open(vAlice, dataDb)
@@ -261,6 +301,8 @@ func TestExecAliceBobTogether(t *testing.T) {
 }
 
 func TestExecWithSyncRelay(t *testing.T) {
+	requireSyncRelay(t, "wss://sync-relay.baolib.org")
+
 	alice, aliceSecret := security.NewKeyPairMust()
 	bob, bobSecret := security.NewKeyPairMust()
 
@@ -271,7 +313,7 @@ func TestExecWithSyncRelay(t *testing.T) {
 	defer s.Close()
 
 	// Create vault for Alice
-	v, err := vault.Create(vault.Users, aliceSecret, s, db, vault.Config{
+	v, err := vault.Create(aliceSecret, s, db, vault.Config{
 		SyncRelay: "wss://sync-relay.baolib.org",
 	})
 	core.TestErr(t, err, "Create failed: %v")
@@ -299,7 +341,7 @@ func TestExecWithSyncRelay(t *testing.T) {
 	dataDb2 := sqlx.NewTestDB(t, "vault4.db", testDdl)
 	s2 := store.LoadTestStore(t, "test")
 
-	vBob, err := vault.Open(vault.Users, bobSecret, alice, s2, db2)
+	vBob, err := vault.Open(bobSecret, alice, s2, db2)
 	core.TestErr(t, err, "cannot open vault: %v")
 
 	replicaBob, err := Open(vBob, dataDb2)

@@ -12,6 +12,7 @@ import (
 
 // Stat retrieves the file information for a given file name from the vault.
 func (v *Vault) Stat(name string) (File, error) {
+	name = nameWithoutEncryptionToken(name)
 	dir, n := path.Split(name)
 	dir = path.Clean(dir)
 
@@ -21,8 +22,8 @@ func (v *Vault) Stat(name string) (File, error) {
 
 	// Retrieve the file information from the database
 	err := v.DB.QueryRow("STAT_FILE", sqlx.Args{"vault": v.ID, "name": n, "dir": dir},
-		&file.Id, &dirName, &fileName, &file.Realm, &file.StoreDir, &file.StoreName, &file.LocalCopy,
-		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs)
+		&file.Id, &dirName, &fileName, &file.StoreDir, &file.StoreName, &file.LocalCopy,
+		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs, &file.EcRecipient)
 	if err == sqlx.ErrNoRows {
 		return File{}, os.ErrNotExist
 	}

@@ -24,7 +24,7 @@ func TestAttributes(t *testing.T) {
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer store.Close()
 
-	s, err := Create(Users, alice, store, db, Config{})
+	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "cannot create vault")
 	defer s.Close()
 

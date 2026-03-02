@@ -19,16 +19,16 @@ func (v *Vault) SyncAccess(options IOOption, changes ...AccessChange) error {
 	var err error
 	cs, err := v.convertToChanges(changes)
 	if err != nil {
-		return core.Error(core.AuthError, "cannot convert access changes for domain %s", v.Realm, err)
+		return core.Error(core.AuthError, "cannot convert access changes for domain %s", v.legacyRealm(), err)
 	}
 	for _, c := range cs {
 		bc, err := marshalChange(c)
 		if err != nil {
-			return core.Error(core.GenericError, "cannot match block changes for domain %s", v.Realm, err)
+			return core.Error(core.GenericError, "cannot match block changes for domain %s", v.legacyRealm(), err)
 		}
 		err = v.stageBlockChange(bc)
 		if err != nil {
-			return core.Error(core.GenericError, "cannot stage block change for domain %s", v.Realm, err)
+			return core.Error(core.GenericError, "cannot stage block change for domain %s", v.legacyRealm(), err)
 		}
 		core.Info("staged %s in %s", c, v.ID)
 	}
@@ -120,14 +120,14 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 		if len(recipients) > 0 {
 			addKey, err := v.createAddKey(recipients, keyId, key)
 			if err != nil {
-				return nil, core.Error(core.GenericError, "cannot create add key for domain %s", v.Realm, err)
+				return nil, core.Error(core.GenericError, "cannot create add key for domain %s", v.legacyRealm(), err)
 			}
 			delta = append(delta, &addKey)
 			keysForScope = map[uint64]security.AESKey{keyId: key}
 		}
 	}
 
-	core.Info("successfully created %d changes for domain %s", len(delta), v.Realm)
+	core.Info("successfully created %d changes for domain %s", len(delta), v.legacyRealm())
 	core.End("")
 	return delta, nil
 }
@@ -143,11 +143,11 @@ func (v *Vault) createAddKey(ids []security.PublicID, keyId uint64, key security
 	for _, id := range ids {
 		ekey, err := security.EcEncrypt(id, key)
 		if err != nil {
-			return AddKey{}, core.Error(core.EncodeError, "cannot encrypt key for user %s in domain %s", id, v.Realm, err)
+			return AddKey{}, core.Error(core.EncodeError, "cannot encrypt key for user %s in domain %s", id, v.legacyRealm(), err)
 		}
 		addKey.EncryptedKeys[id] = ekey
 	}
-	core.End("created add key for domain %s, keyId %d", v.Realm, keyId)
+	core.End("created add key for domain %s, keyId %d", v.legacyRealm(), keyId)
 	return addKey, nil
 }
 
@@ -165,7 +165,7 @@ func (v *Vault) getUserByShortId(shortId uint64) (security.PublicID, error) {
 
 // GetAccesses retrieves the access rights.
 func (v *Vault) GetAccesses() (Accesses, error) {
-	core.Start("group %s", v.Realm)
+	core.Start("group %s", v.legacyRealm())
 	var accesses Accesses = make(Accesses)
 
 	rows, err := v.DB.Query("GET_ACCESSES", sqlx.Args{"vault": v.ID})
@@ -175,7 +175,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		return accesses, nil
 	}
 	if err != nil {
-		return nil, core.Error(core.DbError, "cannot get users for group %s", v.Realm, err)
+		return nil, core.Error(core.DbError, "cannot get users for group %s", v.legacyRealm(), err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -183,7 +183,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		var access Access
 		err = rows.Scan(&id, &access)
 		if err != nil {
-			return nil, core.Error(core.GenericError, "cannot scan user %s for group %s", id, v.Realm, err)
+			return nil, core.Error(core.GenericError, "cannot scan user %s for group %s", id, v.legacyRealm(), err)
 		}
 		accesses[id] = access
 	}

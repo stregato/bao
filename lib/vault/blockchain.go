@@ -2,11 +2,11 @@ package vault
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"time"
 
 	"github.com/stregato/bao/lib/core"
@@ -43,11 +43,15 @@ const (
 	Read Access = 1 << iota
 	Write
 	Admin
+
+	AESEncrypted
+	ECEncrypted
+
 	ReadWrite      = Read + Write
 	ReadWriteAdmin = Read + Write + Admin
 )
 
-var AccessLabels = []string{"", "R", "W", "RW", "A", "RA", "WA", "RWA"}
+var AccessLabels = []string{"", "r", "w", "rw", "a", "ra", "wa", "rwa", "A", "rA", "wA", "rwA"}
 
 func (a Access) String() string {
 	access := ""
@@ -200,7 +204,7 @@ func (v *Vault) getLastBlockHash() ([]byte, error) {
 
 func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 	core.Start("name %s", name)
-	blockPath := path.Join(v.Realm.String(), BlockChainFolder, name)
+	blockPath := path.Join(v.blockChainRoot(), name)
 
 	now := core.Now()
 	data, err := store.ReadFile(v.store, blockPath)
@@ -218,7 +222,7 @@ func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 	}
 
 	hash = core.BigHash(data)
-	_, err = v.DB.Exec("SET_BLOCK", sqlx.Args{
+	r, err := v.DB.Exec("SET_BLOCK", sqlx.Args{
 		"vault":   v.ID,
 		"name":    name,
 		"showId":  block.SnowID,
@@ -227,6 +231,10 @@ func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 	})
 	if err != nil {
 		return nil, core.Error(core.DbError, "cannot insert block %s into DB", blockPath, err)
+	}
+	if rows, rowsErr := r.RowsAffected(); rowsErr == nil && rows == 0 {
+		core.End("block %s already imported", blockPath)
+		return nil, nil
 	}
 
 	for _, blockChange := range block.BlockChanges {
@@ -257,23 +265,34 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 		hash = make([]byte, security.SignatureSize)
 	}
 
-	var cnt int
-	for err == nil {
-		var nextHash []byte
-		name := base64.RawURLEncoding.EncodeToString(hash)
-
-		nextHash, err = v.importBlockFromStorage(name)
-		if err != nil {
-			return nil, core.Error(core.GenericError, "cannot import block %s from store", name, err)
-		}
-		if nextHash == nil {
-			core.End("%d blocks imported, last hash %x", cnt, hash)
-			return hash, nil
-		}
-		cnt++
-		hash = nextHash
+	entries, err := v.store.ReadDir(v.blockChainRoot(), store.Filter{})
+	if os.IsNotExist(err) {
+		core.End("0 blocks imported, blockchain directory does not exist")
+		return hash, nil
 	}
-	return nil, core.Error(core.GenericError, "cannot import blocks from store", err)
+	if err != nil {
+		return nil, core.Error(core.GenericError, "cannot list blockchain directory", err)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	var cnt int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		nextHash, err := v.importBlockFromStorage(entry.Name())
+		if err != nil {
+			return nil, core.Error(core.GenericError, "cannot import block %s from store", entry.Name(), err)
+		}
+		if nextHash != nil {
+			cnt++
+			hash = nextHash
+		}
+	}
+	core.End("%d blocks imported, last hash %x", cnt, hash)
+	return hash, nil
 }
 
 func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
@@ -300,8 +319,8 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		return false, core.Error(core.EncodeError, "cannot encode block", err)
 	}
 
-	name := base64.RawURLEncoding.EncodeToString(hash)
-	blockPath := path.Join(v.Realm.String(), BlockChainFolder, name)
+	name := fmt.Sprintf("%020d", block.SnowID)
+	blockPath := path.Join(v.blockChainRoot(), name)
 
 	_, err = v.store.Stat(blockPath)
 	if err == nil {

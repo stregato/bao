@@ -12,28 +12,28 @@ const (
 )
 
 func (v *Vault) getLastKeyFromDB() (id uint64, key security.AESKey, err error) {
-	core.Start("getting last key for group %s", v.Realm)
-	if v.Realm == All {
+	core.Start("getting last key for group %s", v.legacyRealm())
+	if v.legacyRealm() == All {
 		return 0, nil, nil
 	}
 
 	err = v.DB.QueryRow("GET_LAST_KEY", sqlx.Args{"vault": v.ID}, &id, &key)
 	if err != nil {
-		return 0, nil, core.Error(core.DbError, "cannot get last key for group %s", v.Realm, err)
+		return 0, nil, core.Error(core.DbError, "cannot get last key for group %s", v.legacyRealm(), err)
 	}
-	core.End("successfully got last key for group %s: id=%d, key=%x", v.Realm, id, key)
+	core.End("successfully got last key for group %s: id=%d, key=%x", v.legacyRealm(), id, key)
 	return id, key, nil
 }
 
 func (v *Vault) setKeyToDB(keyId uint64, key []byte) error {
-	core.Start("setting key %d for domain %s", keyId, v.Realm)
+	core.Start("setting key %d for domain %s", keyId, v.legacyRealm())
 
 	_, err := v.DB.Exec("SET_KEY", sqlx.Args{"vault": v.ID, "id": keyId, "key": key, "tm": core.Now().Unix()})
 	if err != nil {
-		return core.Error(core.DbError, "cannot set key %d for domain %s", keyId, v.Realm, err)
+		return core.Error(core.DbError, "cannot set key %d for domain %s", keyId, v.legacyRealm(), err)
 	}
 
-	core.End("successfully set key %d for domain %s", keyId, v.Realm)
+	core.End("successfully set key %d for domain %s", keyId, v.legacyRealm())
 	return err
 }
 
@@ -59,10 +59,10 @@ func (v *Vault) getKey(id uint64) (key security.AESKey, err error) {
 }
 
 func (v *Vault) getKeysForScope() (map[uint64]security.AESKey, error) {
-	core.Start("getting keys for domain %s", v.Realm)
+	core.Start("getting keys for domain %s", v.legacyRealm())
 	rows, err := v.DB.Query("GET_KEYS", sqlx.Args{"vault": v.ID})
 	if err != nil {
-		return nil, core.Error(core.DbError, "cannot get keys for group %s", v.Realm, err)
+		return nil, core.Error(core.DbError, "cannot get keys for group %s", v.legacyRealm(), err)
 	}
 	defer rows.Close()
 
@@ -76,6 +76,6 @@ func (v *Vault) getKeysForScope() (map[uint64]security.AESKey, error) {
 		}
 		keys[id] = key
 	}
-	core.End("successfully got %d keys for group %s", len(keys), v.Realm)
+	core.End("successfully got %d keys for group %s", len(keys), v.legacyRealm())
 	return keys, nil
 }

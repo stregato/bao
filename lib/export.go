@@ -599,8 +599,8 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 	}
 
 	me := C.GoString(userPrivateID)
-	realm := C.GoString(realmC)
-	s, err := vault.Create(vault.Realm(realm), security.PrivateID(me), store, d, config)
+	_ = C.GoString(realmC) // TODO(realm-removal): remove realm from C API.
+	s, err := vault.Create(security.PrivateID(me), store, d, config)
 	if err != nil {
 		core.LogError("cannot create vault for store %s", store.ID(), err)
 		return cResult(nil, 0, err)
@@ -631,8 +631,8 @@ func bao_vault_open(realmC *C.char, meC *C.char, authorC *C.char, storeH C.longl
 
 	me := C.GoString(meC)
 	author := C.GoString(authorC)
-	realm := C.GoString(realmC)
-	s, err := vault.Open(vault.Realm(realm), security.PrivateID(me), security.PublicID(author), store, d)
+	_ = C.GoString(realmC) // TODO(realm-removal): remove realm from C API.
+	s, err := vault.Open(security.PrivateID(me), security.PublicID(author), store, d)
 	if err != nil {
 		core.LogError("cannot open vault for store %s", store.ID(), err)
 		return cResult(nil, 0, err)

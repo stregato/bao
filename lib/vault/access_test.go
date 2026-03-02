@@ -24,7 +24,7 @@ func TestAccess(t *testing.T) {
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer store.Close()
 
-	s, err := Create(Users, alice, store, db, Config{})
+	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: alice.PublicIDMust()})
@@ -53,7 +53,7 @@ func TestAccessTwoUsers(t *testing.T) {
 	})
 	core.TestErr(t, err, "cannot open store: %v", err)
 
-	sa, err := Create(Users, alice, store, db, Config{})
+	sa, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = sa.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: alicePublic})
@@ -62,7 +62,7 @@ func TestAccessTwoUsers(t *testing.T) {
 
 	bob := security.NewPrivateIDMust()
 	bobPublic := bob.PublicIDMust()
-	sb, err := Open(Users, bob, alicePublic, store, db)
+	sb, err := Open(bob, alicePublic, store, db)
 	core.TestErr(t, err, "Open failed: %v")
 
 	access, err := sb.GetAccess(bobPublic)
@@ -73,7 +73,7 @@ func TestAccessTwoUsers(t *testing.T) {
 	err = sa.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob.PublicIDMust()})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
-	sb, err = Open(Users, bob, alicePublic, store, db)
+	sb, err = Open(bob, alicePublic, store, db)
 	core.TestErr(t, err, "Open failed: %v")
 
 	access, err = sb.GetAccess(bobPublic)

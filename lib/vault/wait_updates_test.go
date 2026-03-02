@@ -13,6 +13,8 @@ import (
 )
 
 func TestWaitUpdates(t *testing.T) {
+	requireSyncRelay(t, "wss://sync-relay.baolib.org")
+
 	// Setup test environment
 	db := sqlx.NewTestDB(t, "vault.db", "")
 	defer db.Close()
@@ -24,7 +26,7 @@ func TestWaitUpdates(t *testing.T) {
 	defer s.Close()
 
 	// Create vault for Alice with sync relay
-	vAlice, err := Create(Users, aliceSecret, s, db, Config{
+	vAlice, err := Create(aliceSecret, s, db, Config{
 		SyncRelay: "wss://sync-relay.baolib.org",
 	})
 	core.TestErr(t, err, "Create failed: %v")
@@ -40,7 +42,7 @@ func TestWaitUpdates(t *testing.T) {
 	s2 := store.LoadTestStore(t, "test")
 	defer s2.Close()
 
-	vBob, err := Open(Users, bobSecret, alice, s2, db2)
+	vBob, err := Open(bobSecret, alice, s2, db2)
 	core.TestErr(t, err, "cannot open vault: %v")
 	defer vBob.Close()
 

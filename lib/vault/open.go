@@ -19,7 +19,7 @@ const (
 	Sync OpenOption = 1 << iota // Sync indicates that the operation should be performed synchronously, waiting for completion
 )
 
-func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, store store.Store, db *sqlx.DB) (*Vault, error) {
+func Open(userSecret security.PrivateID, author security.PublicID, store store.Store, db *sqlx.DB) (*Vault, error) {
 	core.Start("opening vault with store URL %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
@@ -33,7 +33,7 @@ func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, 
 
 	var config Config
 
-	id := fmt.Sprintf("%s@%s", realm.String(), store.ID())
+	id := fmt.Sprintf("%s", store.ID())
 	_, _, _, b, _ := db.GetSetting(path.Join("/bao/config/", id))
 	if b != nil {
 		err := msgpack.Unmarshal(b, &config)
@@ -41,12 +41,12 @@ func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, 
 			return nil, core.Error(core.ParseError, "cannot unmarshal config for vault %s", id, err)
 		}
 	}
+	core.Info("vault %s open config loaded: syncRelay=%q ioThrottle=%d", id, config.SyncRelay, config.IoThrottle)
 
 	ioThrottle := core.DefaultIfZero(config.IoThrottle, 10) // Default to 10 concurrent I/O operations
 
 	v := Vault{
 		ID:         id,
-		Realm:      realm,
 		UserSecret: userSecret,
 		UserID:     userID,
 		UserIDHash: core.Int64Hash(userID.Bytes()),
@@ -60,6 +60,7 @@ func Open(realm Realm, userSecret security.PrivateID, author security.PublicID, 
 		newFiles:      sync.NewCond(&sync.Mutex{}),
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
 		ioScheduleMap: make(map[FileId]chan struct{}),
+		ignoredStoreNames: make(map[string]struct{}),
 	}
 	allocatedSize, err := v.calculateAllocatedSize()
 	if err != nil {

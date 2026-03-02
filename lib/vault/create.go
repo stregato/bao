@@ -20,7 +20,7 @@ import (
 var ddl1_0 string
 
 // Create creates a new Bao instance.
-func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*Vault, error) {
+func Create(userSecret security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*Vault, error) {
 	core.Start("creating vault for url %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
@@ -36,17 +36,20 @@ func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *s
 		return nil, core.Error(core.GenericError, "invalid private while creating vault for url %s", store.ID(), err)
 	}
 
-	err = Wipe(store, realm.String())
+	err = Wipe(store, DataFolder)
 	if err != nil {
 		return nil, core.Error(core.GenericError, "cannot wipe data in store %s", store.ID(), err)
+	}
+	err = Wipe(store, BlockChainFolder)
+	if err != nil {
+		return nil, core.Error(core.GenericError, "cannot wipe blockchain in store %s", store.ID(), err)
 	}
 	userIDHash := core.Int64Hash(userID.Bytes())
 	ioThrottle := core.DefaultIfZero(config.IoThrottle, 10) // Default to 10 concurrent I/O operations
 
-	id := fmt.Sprintf("%s@%s", realm.String(), store.ID())
+	id := fmt.Sprintf("%s", store.ID())
 	v := Vault{
 		ID:            id,
-		Realm:         realm,
 		UserSecret:    userSecret,
 		UserID:        userID,
 		UserIDHash:    userIDHash,
@@ -58,6 +61,7 @@ func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *s
 		lastCleanupAt: time.Now(),
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
 		ioScheduleMap: make(map[FileId]chan struct{}),
+		ignoredStoreNames: make(map[string]struct{}),
 	}
 
 	bc, err := marshalChange(&config)
@@ -74,6 +78,9 @@ func Create(realm Realm, userSecret security.PrivateID, store store.Store, db *s
 	}
 
 	v.startHousekeeping()
+	if err := v.startSyncRelay(); err != nil {
+		return nil, core.Error(core.NetError, "cannot start sync relay for vault %s", id, err)
+	}
 	openedStashesMu.Lock()
 	openedStashes = append(openedStashes, &v)
 	openedStashesMu.Unlock()

@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -13,9 +14,25 @@ import (
 
 const watchQueueSize = 1024
 
+func (v *Vault) relayClientID() string {
+	return fmt.Sprintf("%d-%p", os.Getpid(), v)
+}
+
+func (v *Vault) relayWatchFolders() []string {
+	return []string{
+		v.dataRoot(),
+		v.blockChainRoot(),
+	}
+}
+
 func (v *Vault) startSyncRelay() error {
-	if v.syncRelayCh != nil || v.Config.SyncRelay == "" {
-		return nil // Sync relay already running or not configured
+	if v.syncRelayCh != nil {
+		core.Info("sync relay already running for vault %s", v.ID)
+		return nil
+	}
+	if v.Config.SyncRelay == "" {
+		core.Info("sync relay disabled for vault %s: empty config", v.ID)
+		return nil
 	}
 
 	// Open or reuse the websocket connection to the sync relay server
@@ -26,16 +43,19 @@ func (v *Vault) startSyncRelay() error {
 
 	client.mu.Lock()
 	if _, exists := client.subscribers[v.ID]; !exists {
-		if err := websocket.Message.Send(client.conn, watchAddPrefix+v.Realm.String()); err != nil {
-			client.mu.Unlock()
-			return core.Error(core.NetError, "cannot send watch add message", err)
+		for _, folder := range v.relayWatchFolders() {
+			if err := websocket.Message.Send(client.conn, watchAddPrefix+folder); err != nil {
+				client.mu.Unlock()
+				return core.Error(core.NetError, "cannot send watch add message", err)
+			}
 		}
 		client.subscribers[v.ID] = make(map[string]*Vault)
 	}
-	instanceID := fmt.Sprintf("%p", v)
+	instanceID := v.relayClientID()
 	client.subscribers[v.ID][instanceID] = v
 	client.mu.Unlock()
 	v.syncRelayCh = make(chan string, watchQueueSize)
+	core.Info("sync relay started for vault %s with clientID %s on %s", v.ID, instanceID, v.Config.SyncRelay)
 
 	go v.relayLoop()
 	return nil
@@ -45,8 +65,8 @@ func (v *Vault) relayLoop() {
 	defer v.cleanupSyncRelay()
 
 	v.Sync()
-	blockchainPrefix := path.Join(v.Realm.String(), BlockChainFolder)
-	dataPrefix := path.Join(v.Realm.String(), DataFolder)
+	blockchainPrefix := v.blockChainRoot()
+	dataPrefix := v.dataRoot()
 
 	for name := range v.syncRelayCh {
 		switch {
@@ -56,10 +76,10 @@ func (v *Vault) relayLoop() {
 			now := core.Now()
 			dir, name := path.Split(name)
 			dir = path.Clean(dir)
-			_, err := v.syncronizeFile(dir, name)
+			_, synced, err := v.syncronizeFile(dir, name)
 			if err != nil {
 				core.Error("failed to sync file %s/%s/%s: %v", v.ID, dir, name, err)
-			} else {
+			} else if synced {
 				v.lastSyncAt = now
 			}
 		}
@@ -75,7 +95,7 @@ func (v *Vault) cleanupSyncRelay() {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 
-	instanceID := fmt.Sprintf("%p", v)
+	instanceID := v.relayClientID()
 	subs := client.subscribers[v.ID]
 	if subs == nil {
 		return
@@ -87,7 +107,6 @@ func (v *Vault) cleanupSyncRelay() {
 	// If no more subscribers for this vault, clean up
 	if len(subs) == 0 {
 		delete(client.subscribers, v.ID)
-		websocket.Message.Send(client.conn, watchRemovePrefix+v.Realm.String())
 
 		// If no more subscribers for any vault, close the websocket
 		if len(client.subscribers) == 0 {
@@ -133,7 +152,7 @@ func (v *Vault) notifyChange(filename string) error {
 	if err != nil {
 		return err
 	}
-	instanceID := fmt.Sprintf("%p", v)
+	instanceID := v.relayClientID()
 	// Include vaultID and instanceID with notification: format is vaultID:instanceID:filename
 	message := v.ID + ":" + instanceID + ":" + name
 	if err := websocket.Message.Send(client.conn, message); err != nil {

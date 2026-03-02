@@ -32,7 +32,11 @@ func (v *Vault) readFile(file File, progress chan int64) error {
 		}
 	}()
 
-	writer, err := decryptWriter(v.Realm, v.UserSecret, file, f, v.getKey)
+	encMethod, _, err := v.encryptionMethodForFile(file)
+	if err != nil {
+		return core.Error(core.ParseError, "cannot determine encryption mode for %s", file.Name, err)
+	}
+	writer, err := decryptWriter(encMethod, v.UserSecret, file, f, v.getKey)
 	if err != nil {
 		return core.Error(core.GenericError, "cannot create decrypt writer for %s", file.Name, err)
 	}

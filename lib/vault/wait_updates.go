@@ -3,31 +3,52 @@ package vault
 import "time"
 
 func (v *Vault) WaitUpdates(timeout time.Duration) bool {
-	done := make(chan bool, 1)
+	deadline := time.Now().Add(timeout)
 
-	go func() {
-		v.newFiles.L.Lock()
+	v.newFiles.L.Lock()
+	defer v.newFiles.L.Unlock()
+
+	startSeq := v.updateSeq
+
+	for {
+		if v.interrupted {
+			v.interrupted = false
+			return false
+		}
+		if v.updateSeq != startSeq {
+			return true
+		}
+
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false
+		}
+
+		// Wake the cond on timeout so Wait() can re-check conditions.
+		timer := time.AfterFunc(remaining, func() {
+			v.newFiles.L.Lock()
+			v.newFiles.Broadcast()
+			v.newFiles.L.Unlock()
+		})
 		v.newFiles.Wait()
-
-		// Check if this wake was due to interrupt (still holding lock)
-		interrupted := v.interrupted
-		v.interrupted = false
-		v.newFiles.L.Unlock()
-
-		done <- !interrupted
-	}()
-
-	select {
-	case result := <-done:
-		return result
-	case <-time.After(timeout):
-		return false // timeout
+		timer.Stop()
 	}
+}
+
+func (v *Vault) signalUpdateLocked() {
+	v.updateSeq++
+	v.newFiles.Broadcast()
+}
+
+func (v *Vault) signalUpdate() {
+	v.newFiles.L.Lock()
+	v.signalUpdateLocked()
+	v.newFiles.L.Unlock()
 }
 
 func (v *Vault) InterruptWait() {
 	v.newFiles.L.Lock()
 	v.interrupted = true
-	v.newFiles.L.Unlock()
 	v.newFiles.Broadcast()
+	v.newFiles.L.Unlock()
 }

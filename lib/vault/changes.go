@@ -203,7 +203,7 @@ func (a *AddAttribute) String() string {
 }
 
 func (v *Vault) addKey(keyId uint64, key []byte) error {
-	core.Start("key %d, vault %s", keyId, v.Realm)
+	core.Start("key %d, vault %s", keyId, v.legacyRealm())
 	if keyId == 0 {
 		core.End("key ID is zero, no key to add")
 		return nil

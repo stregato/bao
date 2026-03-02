@@ -23,7 +23,7 @@ func TestMailbox(t *testing.T) {
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer store.Close()
 
-	s, err := vault.Create(vault.Users, alice, store, db, vault.Config{})
+	s, err := vault.Create(alice, store, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SyncAccess(0, vault.AccessChange{Access: vault.ReadWrite, UserId: alice.PublicIDMust()})
@@ -55,7 +55,7 @@ func TestMailboxPair(t *testing.T) {
 	core.TestErr(t, err, "cannot open store: %v", err)
 	defer store.Close()
 
-	v, err := vault.Create(vault.Home, aliceSecret, store, db, vault.Config{})
+	v, err := vault.Create(aliceSecret, store, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = v.SyncAccess(0, vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
@@ -72,7 +72,7 @@ func TestMailboxPair(t *testing.T) {
 
 	db = sqlx.NewTestDB(t, "mailbox2.db", "")
 	defer db.Close()
-	v, err = vault.Open(vault.Home, bobSecret, alice, store, db)
+	v, err = vault.Open(bobSecret, alice, store, db)
 	core.TestErr(t, err, "Open failed: %v", err)
 
 	messages, err := Receive(v, bob.String(), time.Time{}, 0)
@@ -84,7 +84,7 @@ func TestMailboxPair(t *testing.T) {
 
 	db = sqlx.NewTestDB(t, "mailbox3.db", "")
 	defer db.Close()
-	v, err = vault.Open(vault.Home, carlSecret, alice, store, db)
+	v, err = vault.Open(carlSecret, alice, store, db)
 	core.TestErr(t, err, "Open failed: %v", err)
 
 	messages, err = Receive(v, bob.String(), time.Time{}, 0)

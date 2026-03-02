@@ -52,6 +52,14 @@ func OpenEngine(driverName, dataSourceName string) (*Engine, error) {
 	if err != nil {
 		return nil, core.Error(core.DbError, "Cannot open SQLite db %s with driver %s", dataSourceName, driverName, err)
 	}
+	if driverName == "sqlite3" {
+		if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+			return nil, core.Error(core.DbError, "cannot set SQLite journal_mode=WAL for %s", dataSourceName, err)
+		}
+		if _, err := db.Exec("PRAGMA busy_timeout=2000;"); err != nil {
+			return nil, core.Error(core.DbError, "cannot set SQLite busy_timeout for %s", dataSourceName, err)
+		}
+	}
 
 	core.End("successfully opened SQLite db %s with driver %s", dataSourceName, driverName)
 	return &Engine{DB: db}, nil

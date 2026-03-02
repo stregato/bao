@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_blocks_vault_showId ON blocks (vault, showId);
 CREATE INDEX IF NOT EXISTS idx_blocks_hash ON blocks (hash);
 
 -- SET_BLOCK 1.0
-INSERT INTO blocks(vault, name, showId, hash, payload) VALUES (:vault, :name, :showId, :hash, :payload)
+INSERT OR IGNORE INTO blocks(vault, name, showId, hash, payload) VALUES (:vault, :name, :showId, :hash, :payload)
 
 -- GET_BLOCKS 1.0
 SELECT name, hash, payload FROM blocks WHERE vault=:vault ORDER BY showId ASC
@@ -146,7 +146,6 @@ CREATE TABLE IF NOT EXISTS files (
     storeName VARCHAR(32) NOT NULL,
     dir VARCHAR(4096) NOT NULL,
     name VARCHAR(256) NOT NULL,
-    "group" VARCHAR(64),
     localCopy VARCHAR(4096) DEFAULT "",
     modTime INTEGER NOT NULL,
     size INTEGER NOT NULL,
@@ -156,6 +155,9 @@ CREATE TABLE IF NOT EXISTS files (
     keyId INTEGER NOT NULL,
     attrs BLOB
 );
+
+-- INIT 1.2
+ALTER TABLE files ADD COLUMN ecRecipient VARCHAR(100) NOT NULL DEFAULT '';
 
 -- INIT 1.0
 CREATE INDEX IF NOT EXISTS idx_files_vault_dir ON files (vault, dir);
@@ -172,26 +174,26 @@ ORDER BY id DESC LIMIT 1
 -- GET_STORE_NAMES_IN_STORE_DIR 1.0
 SELECT storeName FROM files WHERE vault=:vault AND storeDir=:storeDir ORDER BY modTime
 
--- SET_FILE 1.0
-INSERT INTO files (vault, storeDir, storeName, dir, name, "group", localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs)
-VALUES (:vault, :storeDir, :storeName, :dir, :name, :group, :localCopy, :modTime, :size, :allocatedSize, :flags, :authorId, :keyId, :attrs)
+-- SET_FILE 1.3
+INSERT INTO files (vault, storeDir, storeName, dir, name, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs, ecRecipient)
+VALUES (:vault, :storeDir, :storeName, :dir, :name, :localCopy, :modTime, :size, :allocatedSize, :flags, :authorId, :keyId, :attrs, :ecRecipient)
 
 -- SET_FLAGS_IN_FILE 1.0
 UPDATE files SET flags = :flagsM WHERE ID = :id
 
--- SET_DIR 1.0
-INSERT INTO files (vault, storeDir, storeName, dir, name, "group", modTime, size, allocatedSize, flags, authorId, keyId, attrs)
-SELECT :vault, "", "", :dir, :name, :group, 0, 0, 0, 0, 0, 0, NULL
+-- SET_DIR 1.1
+INSERT INTO files (vault, storeDir, storeName, dir, name, modTime, size, allocatedSize, flags, authorId, keyId, attrs)
+SELECT :vault, "", "", :dir, :name, 0, 0, 0, 0, 0, 0, NULL
 WHERE NOT EXISTS (
     SELECT 1 FROM files WHERE vault = :vault AND dir = :dir AND name = :name AND modTime = 0
 );
 
 -- GET_FILES_WITH_FLAGS 1.0
-SELECT sf.id, sf.name, sf."group", sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs
+SELECT sf.id, sf.name, sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs
 FROM files sf WHERE sf.vault = :vault AND sf.flags & :flagsM != 0 ORDER BY sf.id ASC;
 
--- GET_FILES_IN_DIR 1.0
-SELECT sf.id, sf.name, sf."group", sf.localCopy, sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs, sf.authorId, sf.keyId, sf.storeDir, sf.storeName
+-- GET_FILES_IN_DIR 1.3
+SELECT sf.id, sf.name, sf.localCopy, sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs, sf.authorId, sf.keyId, sf.storeDir, sf.storeName, sf.ecRecipient
 FROM files sf
 JOIN (
     SELECT name, MAX(modTime) AS maxModTime
@@ -202,11 +204,11 @@ JOIN (
 WHERE sf.vault = :vault AND sf.dir = :dir AND sf.modTime >= :since and sf.id > :afterId
 LIMIT :limit;
 
--- GET_FILE_BY_ID 1.0
-SELECT id, storeDir, storeName, dir, name, "group", localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs FROM files WHERE vault = :vault AND id = :id
+-- GET_FILE_BY_ID 1.3
+SELECT id, storeDir, storeName, dir, name, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs, ecRecipient FROM files WHERE vault = :vault AND id = :id
 
--- GET_FILE_BY_NAME 1.0
-SELECT id, dir, name, "group", storeDir, storeName, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs FROM files 
+-- GET_FILE_BY_NAME 1.3
+SELECT id, dir, name, storeDir, storeName, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs, ecRecipient FROM files 
 WHERE vault = :vault AND dir = :dir AND 
 name = :name ORDER BY modTime LIMIT 1 OFFSET :version
 
@@ -218,13 +220,13 @@ name=:name ORDER BY modTime ASC
 SELECT storeDir FROM files WHERE vault = :vault AND storeDir LIKE :baseDir || '%'
 ORDER BY id DESC LIMIT 1
 
--- STAT_FILE 1.0
-SELECT id, dir, name, "group", storeDir, storeName, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs FROM files 
+-- STAT_FILE 1.3
+SELECT id, dir, name, storeDir, storeName, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs, ecRecipient FROM files 
 WHERE vault = :vault AND dir = :dir AND name = :name 
 ORDER BY modTime DESC LIMIT 1
 
 -- GET_LAST_FILE 1.0
-SELECT storeDir, storeName, modTime, size, allocatedSize, flags, "group" FROM files 
+SELECT storeDir, storeName, modTime, size, allocatedSize, flags FROM files 
 WHERE vault = :vault AND dir = :dir AND name = :name
 ORDER BY modTime DESC LIMIT 1 OFFSET :version
 

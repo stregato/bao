@@ -37,7 +37,6 @@ type Vault struct {
 	Author     security.PublicID  `json:"author"`     // Author of the vault, typically the public ID of the user who created it
 	DB         *sqlx.DB           `json:"-"`          // Database connection for storing and retrieving vault metadata
 	Config     Config             `json:"config"`     // Configuration settings for the vault, including retention policies and store.limits
-	Realm      Realm              `json:"realm"`      // Realm associated with the vault, used for namespacing and organization
 
 	store              store.Store  // Storage backend for the vault, used for file operations
 	allocatedSize      int64        // Total allocated size for the vault, used for tracking store.usage
@@ -50,6 +49,7 @@ type Vault struct {
 	lastWaitFilesAt      time.Time  // Timestamp of the last files sync operation
 	newFiles             *sync.Cond // Condition variable for signaling changes in watched folders; also protects interrupted flag
 	interrupted          bool       // Flag indicating if an interrupt was signaled (protected by newFiles.L)
+	updateSeq            uint64     // Monotonic counter used by WaitUpdates to avoid missed wakeups
 
 	ioMu                sync.Mutex               // Mutex for synchronizing I/O operations
 	ioScheduleMap       map[FileId]chan struct{} // Map to track scheduled I/O operations by file I
@@ -57,6 +57,9 @@ type Vault struct {
 	ioWritingWg         sync.WaitGroup           // WaitGroup for waiting on I/O operations
 	ioLastChangeRunning int32
 	blockChainMu        sync.Mutex
+
+	ignoredStoreNamesMu sync.RWMutex
+	ignoredStoreNames   map[string]struct{} // Transient cache of files intentionally ignored (e.g. not addressed to this user)
 }
 
 var openedStashes []*Vault

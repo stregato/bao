@@ -20,7 +20,6 @@ type (
 	Replica = replica.Replica
 	Store   = store.Store
 	Config  = vault.Config
-	Realm   = vault.Realm
 )
 
 // NewPrivateID generates a new identity containing the signing and encryption keys.
@@ -59,13 +58,13 @@ func OpenDB(driverName, dataSource, ddl string) (*sqlx.DB, error) {
 }
 
 // CreateVault creates a new bao vault with the provided identity, backing store URL, and config.
-func CreateVault(realm Realm, userPrivateID security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*vault.Vault, error) {
-	return vault.Create(realm, userPrivateID, store, db, config)
+func CreateVault(userPrivateID security.PrivateID, store store.Store, db *sqlx.DB, config Config) (*vault.Vault, error) {
+	return vault.Create(userPrivateID, store, db, config)
 }
 
 // OpenVault opens an existing bao vault with the provided identity, URL, and author.
-func OpenVault(realm Realm, userPrivateID security.PrivateID, author security.PublicID, s store.Store, db *sqlx.DB) (*vault.Vault, error) {
-	return vault.Open(realm, userPrivateID, author, s, db)
+func OpenVault(userPrivateID security.PrivateID, author security.PublicID, s store.Store, db *sqlx.DB) (*vault.Vault, error) {
+	return vault.Open(userPrivateID, author, s, db)
 }
 
 // OpenReplica opens a SQL-like layer for the specified bao vault and group.

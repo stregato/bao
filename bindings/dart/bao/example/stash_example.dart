@@ -13,7 +13,7 @@ void main() async {
     local: LocalConfig(base: '/tmp/${alice.toString()}/sample'),
   );
   var store = await Store.open(storeConfig);
-  var v = await Vault.create(users, aliceSecret, store, db);
+  var v = await Vault.create(aliceSecret, store, db);
 
   v.syncAccess([AccessChange(bob, accessReadWrite)]);
   print(v.getAccess(bob));

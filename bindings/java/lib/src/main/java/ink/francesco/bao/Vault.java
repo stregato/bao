@@ -11,10 +11,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class Vault {
 
-    public static String USERS = "users";
-    public static String HOME = "home";
-    public static String ALL = "all";
-
     public record AccessChange(int access, String userId) {}
 
     long hnd;
@@ -28,14 +24,14 @@ public class Vault {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    static public Vault create(String realm, String identity, Store store, DB db, Map<String, Object> settings) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_create(realm, identity, store.hnd, db.hnd, mapper.writeValueAsString(settings));
+    static public Vault create(String identity, Store store, DB db, Map<String, Object> settings) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_create("", identity, store.hnd, db.hnd, mapper.writeValueAsString(settings));
         r.check();
         return fromResult(r);
     }
 
-    static public Vault open(String realm, String identity, String author, Store store, DB db) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_open(realm, identity, author, store.hnd, db.hnd);
+    static public Vault open(String identity, String author, Store store, DB db) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_open("", identity, author, store.hnd, db.hnd);
         r.check();
         return fromResult(r);
     }

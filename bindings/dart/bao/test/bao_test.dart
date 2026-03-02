@@ -17,7 +17,7 @@ void main() {
         local: LocalConfig(base: '/tmp/${idSecret.publicID()}/sample'),
       );
       var store = await Store.open(storeConfig);
-      var s = await Vault.create(users, idSecret, store, db);
+      var s = await Vault.create(idSecret, store, db);
 
       var (alice, aliceSecret) = newKeyPair();
       await s.syncAccess([AccessChange(alice, accessReadWrite)]);
@@ -39,7 +39,7 @@ void main() {
         local: LocalConfig(base: '/tmp/${idSecret.publicID()}/sample'),
       );
       var store = await Store.open(storeConfig);
-      var s = await Vault.create(users, idSecret, store, db);
+      var s = await Vault.create(idSecret, store, db);
       expect(s, isNotNull);
 
       var file = await s.write('file.txt');

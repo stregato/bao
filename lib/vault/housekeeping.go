@@ -42,7 +42,7 @@ func (v *Vault) retentionCleanup() {
 	var deletedDirs int
 	var deletedRecords int64
 
-	baseDir := path.Join(DataFolder, string(v.Realm))
+	baseDir := v.dataRoot()
 	ls, _ := v.store.ReadDir(baseDir, store.Filter{})
 	sort.Slice(ls, func(i, j int) bool {
 		return ls[i].Name() > ls[j].Name()

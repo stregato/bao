@@ -19,7 +19,7 @@ func TestVersions(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed")
 
 	// Create a temporary file with initial content
@@ -119,7 +119,7 @@ func TestVersionsNonExistentFile(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed")
 
 	// Try to get versions of a file that doesn't exist
@@ -139,7 +139,7 @@ func TestVersionsAfterDelete(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed")
 
 	// Create a file with initial content
@@ -194,7 +194,7 @@ func TestVersionsWithDifferentPaths(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed")
 
 	// Create files in different directories

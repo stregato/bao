@@ -17,7 +17,7 @@ func TestCreate(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(Users, alice, store, db, Config{})
+	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "cannot create vault")
 
 	accesses, err := s.GetAccesses()

@@ -19,10 +19,10 @@ type transaction struct {
 }
 
 type Replica struct {
-	vault *vault.Vault
-	//	lastIds     map[uint64]struct{} // lastIds is a list of last ids for each table
+	vault       *vault.Vault
 	lastId      vault.FileId // lastId is the last id used for the transaction
 	db          *sqlx.DB     // db is the database connection for the layer
+	syncLock    sync.Mutex   // syncLock serializes Sync calls on a replica instance
 	execLock    sync.Mutex   // execLock is a lock for executing SQL statements
 	queryLock   sync.Mutex   // queryLock is a lock for executing SQL queries
 	transaction *transaction // transaction is the current transaction for the layer
@@ -40,7 +40,15 @@ func Open(v *vault.Vault, db *sqlx.DB) (*Replica, error) {
 
 	core.End("lastId %d", lastId)
 
-	return &Replica{vault: v, lastId: vault.FileId(lastId), db: db, execLock: sync.Mutex{}, queryLock: sync.Mutex{}, transaction: nil}, nil
+	return &Replica{
+		vault:       v,
+		lastId:      vault.FileId(lastId),
+		db:          db,
+		syncLock:    sync.Mutex{},
+		execLock:    sync.Mutex{},
+		queryLock:   sync.Mutex{},
+		transaction: nil,
+	}, nil
 }
 
 func readLastTransactionsId(db *sqlx.DB, vaultID string) (lastId int64, err error) {

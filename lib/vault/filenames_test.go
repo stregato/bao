@@ -30,19 +30,23 @@ func TestEncodeDecodeHead(t *testing.T) {
 		AuthorId:  alice.PublicIDMust(),
 		KeyId:     1, // Use a non-zero key ID for encryption
 	}
-	head, err := encodeHead(Users, file, alice, func(keyId uint64) (security.AESKey, error) {
+	head, err := encodeHead("aes", file, "", alice, func(keyId uint64) (security.AESKey, error) {
 		return aesKey, nil
 	})
 	core.TestErr(t, err, "cannot encode head: %v")
 
 	keys := make(map[uint64]security.AESKey)
 	keys[1] = aesKey
-	file, err = decodeHead(Users, head, alice, func(keyId uint64) (security.AESKey, error) {
+	var notForMe bool
+	var retryAfterBlockchain bool
+	file, notForMe, retryAfterBlockchain, err = decodeHead(head, alice, func(keyId uint64) (security.AESKey, error) {
 		return aesKey, nil
 	}, func(shortId uint64) (security.PublicID, error) {
 		return alice.PublicIDMust(), nil
 	})
 	core.TestErr(t, err, "cannot decode head: %v")
+	core.Assert(t, !notForMe, "expected file to be for current user")
+	core.Assert(t, !retryAfterBlockchain, "did not expect blockchain retry condition")
 	core.Assert(t, file.Name == "test.txt", "unexpected name: %s", file.Name)
 	core.Assert(t, file.Size == 1024, "unexpected size: %d", file.Size)
 	core.Assert(t, file.AllocatedSize == 1024, "unexpected allocated size: %d", file.AllocatedSize)

@@ -1,13 +1,24 @@
 package vault
 
 import (
+	"database/sql"
 	"encoding/binary"
+	"errors"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/security"
+	"github.com/stregato/bao/lib/sqlx"
+)
+
+const (
+	headerV1PrefixSize = 16
+	headerV1Version    = 1
+
+	encMethodPublic = 0
+	encMethodAES    = 1
+	encMethodEC     = 2
 )
 
 func encodeFile(file File, authorPrivateID security.PrivateID) ([]byte, error) {
@@ -39,10 +50,14 @@ func encodeFile(file File, authorPrivateID security.PrivateID) ([]byte, error) {
 	return data, nil
 }
 
-func decodeFile(data []byte, getUserId func(shortID uint64) (userID security.PublicID, err error)) (File, error) {
+func isNotFound(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, sqlx.ErrNoRows)
+}
+
+func decodeFile(data []byte, myShortID uint64, getUserId func(shortID uint64) (userID security.PublicID, err error)) (File, bool, error) {
 	core.Start("data length %d", len(data))
 	if len(data) < 74 {
-		return File{}, core.Error(core.GenericError, "invalid data length: %d", len(data))
+		return File{}, false, core.Error(core.GenericError, "invalid data length: %d", len(data))
 	}
 
 	var file File
@@ -51,7 +66,7 @@ func decodeFile(data []byte, getUserId func(shortID uint64) (userID security.Pub
 	sign := data[:64]
 	data = data[64:]
 	if len(data) < 34 {
-		return File{}, core.Error(core.GenericError, "invalid data length: %d", len(data))
+		return File{}, false, core.Error(core.GenericError, "invalid data length: %d", len(data))
 	}
 
 	file.Size = int64(binary.LittleEndian.Uint64(data[:8]))
@@ -65,7 +80,7 @@ func decodeFile(data []byte, getUserId func(shortID uint64) (userID security.Pub
 	shortID := binary.LittleEndian.Uint64(data[26:34])
 
 	if len(data) < 34+nameLen+attrsLen {
-		return File{}, core.Error(core.GenericError, "invalid data length: %d", len(data))
+		return File{}, false, core.Error(core.GenericError, "invalid data length: %d", len(data))
 	}
 
 	file.Name = string(data[34 : 34+nameLen])
@@ -76,37 +91,46 @@ func decodeFile(data []byte, getUserId func(shortID uint64) (userID security.Pub
 
 	userID, err := getUserId(shortID)
 	if err != nil {
-		return File{}, core.Error(core.DbError, "cannot get user ID from short ID %d", shortID, err)
+		if isNotFound(err) && shortID != myShortID {
+			core.Info("unknown author short ID %d for file %s, skipping as not-for-me", shortID, file.Name)
+			return File{}, true, nil
+		}
+		return File{}, false, core.Error(core.DbError, "cannot get user ID from short ID %d", shortID, err)
 	}
 	file.AuthorId = userID
 	if !security.Verify(file.AuthorId, data, sign) {
-		return File{}, core.Error(core.FileError, "signature verification failed for file head", err)
+		return File{}, false, core.Error(core.FileError, "signature verification failed for file head", err)
 	}
 
 	core.End("file %s", file.Name)
-	return file, nil
+	return file, false, nil
 }
 
 // encodeFileHead encrypts the file head with the given key, including the name, size, and modification time.
 // First, it copies the content to a binary buffer, then encrypts the buffer with the given key.
-func encodeHead(realm Realm, file File, authorPrivateID security.PrivateID,
+func encodeHead(encMethod string, file File, ecRecipient security.PublicID, authorPrivateID security.PrivateID,
 	getKey func(keyId uint64) (key security.AESKey, err error)) ([]byte, error) {
 	core.Start("file name %s, keyId %d", file.Name, file.KeyId)
 
 	data, err := encodeFile(file, authorPrivateID)
 
-	var prefix uint64
-	switch realm {
-	case All:
-	case Home:
-		firstDir := strings.SplitN(string(file.Name), "/", 2)[0]
-		userID := security.PublicID(firstDir)
+	var method byte
+	var ref uint64
+	switch encMethod {
+	case "public":
+		method = encMethodPublic
+	case "ec":
+		userID := ecRecipient
+		if userID == "" {
+			return nil, core.Error(core.ParseError, "missing ec recipient for file %s", file.Name)
+		}
 		data, err = security.EcEncrypt(security.PublicID(userID), data)
 		if err != nil {
 			return nil, core.Error(core.GenericError, "invalid public ID %s", userID, err)
 		}
-		prefix = userID.Hash()
-	default:
+		method = encMethodEC
+		ref = userID.Hash()
+	default: // aes
 		key, err := getKey(file.KeyId)
 		if err != nil {
 			return nil, core.Error(core.DbError, "cannot get key for key id %d in encodeHead", file.KeyId, err)
@@ -115,76 +139,103 @@ func encodeHead(realm Realm, file File, authorPrivateID security.PrivateID,
 			core.End("no key found for key id %d", file.KeyId)
 			return nil, nil // No key found for this file, it cannot be encrypted
 		}
-		prefix = file.KeyId
+		method = encMethodAES
+		ref = file.KeyId
 		data, err = security.EncryptAES(data, key)
 		if err != nil {
 			return nil, core.Error(core.EncodeError, "cannot encrypt head in Bao.Write, name %v", file.Name, err)
 		}
 	}
 
-	plain := make([]byte, 8)
-	binary.LittleEndian.PutUint64(plain, prefix)
+	prefix := make([]byte, headerV1PrefixSize)
+	prefix[0] = headerV1Version
+	prefix[1] = method
+	binary.LittleEndian.PutUint64(prefix[8:], ref)
 
 	core.End("successfully encoded file head for %s", file.Name)
-	return append(plain, data...), nil
+	return append(prefix, data...), nil
 }
 
 // decodeFileHead decrypts the file head with the given key, including the name, size, modification time, and other metadata.
 // First, it decrypts the data with the given key, then extracts the file size, modification time, and name.
-func decodeHead(realm Realm, data []byte, userPrivateID security.PrivateID,
-	getKey func(keyId uint64) (security.AESKey, error), getUserId func(shortID uint64) (security.PublicID, error)) (File, error) {
+func decodeHead(data []byte, userPrivateID security.PrivateID,
+	getKey func(keyId uint64) (security.AESKey, error), getUserId func(shortID uint64) (security.PublicID, error)) (file File, notForMe bool, retryAfterBlockchain bool, err error) {
 	core.Start("data length %d", len(data))
-	if len(data) < 74 {
-		return File{}, core.Error(core.GenericError, "invalid data length: %d", len(data))
+	if len(data) < headerV1PrefixSize+74 {
+		return File{}, false, false, core.Error(core.GenericError, "invalid data length: %d", len(data))
 	}
 
-	var file File
-	var err error
+	version := data[0]
+	if version != headerV1Version {
+		return File{}, false, false, core.Error(core.ParseError, "unsupported header version: %d", version)
+	}
+	method := data[1]
+	ref := binary.LittleEndian.Uint64(data[8:16])
+	data = data[headerV1PrefixSize:]
+	userID, err := userPrivateID.PublicID()
+	if err != nil {
+		return File{}, false, false, core.Error(core.DbError, "cannot get public ID from private ID in decodeHead", err)
+	}
+	myShortID := userID.Hash()
+	var decodedKeyID uint64
+	var decodedRecipient security.PublicID
+	var decodedFlagsMask Flags
 
-	keyId := binary.LittleEndian.Uint64(data[0:8])
-	data = data[8:]
-	switch realm {
-	case All:
-	case Home:
-		userID, err := userPrivateID.PublicID()
-		if err != nil {
-			return File{}, core.Error(core.DbError, "cannot get public ID from private ID in decodeHead", err)
-		}
-		shortID := userID.Hash()
-		if shortID != keyId { // only the home user can decrypt with their private ID
-			return File{}, core.Error(core.GenericError, "short ID mismatch: expected %d, got %d", shortID, keyId)
+	switch method {
+	case encMethodPublic:
+		decodedKeyID = 0
+		decodedFlagsMask = 0
+	case encMethodEC:
+		if myShortID != ref { // only the intended user can decrypt with their private ID
+			// Normal path: this file is addressed to another recipient.
+			return File{}, true, false, nil
 		}
 		// Use user's private ID to decrypt
 		data, err = security.EcDecrypt(userPrivateID, data)
 		if err != nil {
-			return File{}, core.Error(core.FileError, "cannot decrypt file head in decodeHead", err)
+			return File{}, false, false, core.Error(core.FileError, "cannot decrypt file head in decodeHead", err)
 		}
-	default:
-		key, err := getKey(keyId)
+		decodedKeyID = 0
+		decodedRecipient = userID
+		decodedFlagsMask = EcEncryption
+	case encMethodAES:
+		key, err := getKey(ref)
 		if err != nil {
-			return File{}, core.Error(core.DbError, "cannot get key for key id %d in decodeHead", keyId, err)
+			return File{}, false, false, core.Error(core.DbError, "cannot get key for key id %d in decodeHead", ref, err)
 		}
 		if key == nil {
-			core.End("no key found for key id %d", keyId)
-			return File{}, nil // No key found for this file, it cannot be decrypted
+			core.End("no key found for key id %d", ref)
+			return File{}, false, false, nil // No key found for this file, it cannot be decrypted
 		}
 		data, err = security.DecryptAES(data, key)
 		if err != nil {
-			return File{}, core.Error(core.FileError, "cannot decrypt file head in decodeHead", err)
+			return File{}, false, false, core.Error(core.FileError, "cannot decrypt file head in decodeHead", err)
 		}
+		decodedKeyID = ref
+		decodedFlagsMask = AESEncryption
+	default:
+		return File{}, false, false, core.Error(core.ParseError, "unsupported encryption method: %d", method)
 	}
 
-	file, err = decodeFile(data, getUserId)
+	var unknownAuthor bool
+	file, unknownAuthor, err = decodeFile(data, myShortID, getUserId)
 	if err != nil {
-		return File{}, core.Error(core.FileError, "cannot decode file head in decodeHead", err)
+		return File{}, false, false, core.Error(core.FileError, "cannot decode file head in decodeHead", err)
 	}
-	file.KeyId = keyId
+	if unknownAuthor {
+		// Temporary condition: user table might be stale until blockchain access updates are imported.
+		return File{}, false, true, nil
+	}
+	file.KeyId = decodedKeyID
+	file.EcRecipient = decodedRecipient
+	file.Flags &^= AESEncryption | EcEncryption
+	file.Flags |= decodedFlagsMask
 
 	core.End("successfully decoded file head for %s", file.Name)
-	return file, nil
+	return file, false, false, nil
 }
 
-func encryptReader(realm Realm, file File, r io.ReadSeeker,
+func encryptReader(encMethod string, file File, ecRecipient security.PublicID, r io.ReadSeeker,
 	getKey func(keyId uint64) (key security.AESKey, err error)) (io.ReadSeeker, error) {
 	core.Start("file name %s, keyId %d", file.Name, file.KeyId)
 
@@ -193,19 +244,21 @@ func encryptReader(realm Realm, file File, r io.ReadSeeker,
 		return nil, core.Error(core.DbError, "cannot get iv in encryptReader, name %v", file.Name, err)
 	}
 
-	switch realm {
-	case All:
+	switch encMethod {
+	case "public":
 		return r, nil // No encryption for public group
-	case Home:
-		firstDir := strings.SplitN(string(file.Name), "/", 2)[0]
-		userID := security.PublicID(firstDir)
+	case "ec":
+		userID := ecRecipient
+		if userID == "" {
+			return nil, core.Error(core.ParseError, "missing ec recipient for file %s", file.Name)
+		}
 		r, err = security.EcEncryptReader(userID, r, iv)
 		if err != nil {
 			return nil, core.Error(core.FileError, "cannot encrypt reader for file %s", file.Name, err)
 		}
 		core.End("successfully created elliptic encrypted reader for file %s", file.Name)
 		return r, nil
-	default:
+	default: // aes
 		key, err := getKey(file.KeyId)
 		if err != nil {
 			return nil, core.Error(core.DbError, "cannot get key for key id %d in encryptReader", file.KeyId, err)
@@ -219,7 +272,7 @@ func encryptReader(realm Realm, file File, r io.ReadSeeker,
 	}
 }
 
-func decryptWriter(realm Realm, privateID security.PrivateID, file File, f io.Writer,
+func decryptWriter(encMethod string, privateID security.PrivateID, file File, f io.Writer,
 	getKey func(keyId uint64) (key security.AESKey, err error)) (io.Writer, error) {
 	iv, err := getIv(file.Name)
 	if err != nil {
@@ -227,15 +280,15 @@ func decryptWriter(realm Realm, privateID security.PrivateID, file File, f io.Wr
 	}
 
 	var w io.Writer
-	switch realm {
-	case All:
+	switch encMethod {
+	case "public":
 		w = f // No encryption, write directly to the file
-	case Home: // EC encryption
+	case "ec":
 		w, err = security.EcDecryptWriter(privateID, f, iv)
 		if err != nil {
 			return nil, core.Error(core.EncodeError, "cannot create ec decrypt writer for %s", file.Name, err)
 		}
-	default: // AES encryption
+	default: // aes
 		key, err := getKey(file.KeyId)
 		if err != nil {
 			return nil, core.Error(core.DbError, "cannot get key for file %s", file.Name, err)

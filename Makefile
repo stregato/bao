@@ -130,7 +130,11 @@ magpie:
 	mkdir -p $(MAGPIE_PATH)/ios/Frameworks
 	cp -rf $(BUILD_PATH)/ios/bao.xcframework $(MAGPIE_PATH)/ios/Frameworks
 	cp $(BUILD_PATH)/linux/libbao_amd64.so $(MAGPIE_PATH)/linux/libbao_amd64.so
+	cp $(BUILD_PATH)/linux/libbao_amd64.so $(MAGPIE_PATH)/linux/libbao.so
 	cp $(BUILD_PATH)/windows/bao_amd64.dll $(MAGPIE_PATH)/windows/bao_amd64.dll
+	cp $(BUILD_PATH)/windows/bao_amd64.dll $(MAGPIE_PATH)/windows/bao.dll
+	mkdir -p $(MAGPIE_PATH)/android/app/src/main/jniLibs/arm64-v8a
+	cp $(BUILD_PATH)/android/libbao_arm64.so $(MAGPIE_PATH)/android/app/src/main/jniLibs/arm64-v8a/libbao.so
 
 py: lib
 	echo "Building Python bindings"

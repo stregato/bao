@@ -4,13 +4,11 @@ import (
 	"database/sql"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"sort"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/sqlx"
 	"github.com/stregato/bao/lib/store"
@@ -25,7 +23,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 
 	now := time.Now()
 
-	baseDir := path.Join(string(v.Realm), DataFolder)
+	baseDir := v.dataRoot()
 	hasChanged, err := v.hasChanged(baseDir)
 	if err != nil {
 		return nil, core.Error(core.GenericError, "cannot determine if vault has changed", err)
@@ -55,7 +53,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	}
 
 	var errX error
-	skippedDecodeErrors := 0
+	skippedNotForMe := 0
 	for _, segment := range segments {
 		storeDir := path.Join(baseDir, segment)
 		ls, err2 := v.store.ReadDir(path.Join(storeDir, "h"), store.Filter{})
@@ -69,17 +67,25 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 		}
 
 		n := 0
-		for _, v := range ls {
-			if !knowns[v.Name()] {
-				ls[n] = v
+		for _, entry := range ls {
+			name := entry.Name()
+			if !knowns[name] && !v.isIgnoredStoreName(storeDir, name) {
+				ls[n] = entry
 				n++
 			}
 		}
 		ls = ls[:n] // Filter out known files
 
+		type syncResult struct {
+			storeName string
+			
+			file      File
+			synced    bool
+			err       error
+		}
 		parallelism := min(16, len(ls)) // Limit parallelism to the number of files
 		in := make(chan string, parallelism)
-		out := make(chan any, 10)
+		out := make(chan syncResult, 10)
 		var wait sync.WaitGroup
 
 		for i := 0; i < parallelism; i++ {
@@ -91,12 +97,8 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 					return // channel closed
 				}
 
-				file, err := v.syncronizeFile(storeDir, name)
-				if err != nil {
-					out <- err
-				} else {
-					out <- file
-				}
+				file, synced, err := v.syncronizeFile(storeDir, name)
+				out <- syncResult{storeName: name, file: file, synced: synced, err: err}
 			}()
 		}
 		go func() {
@@ -111,32 +113,54 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 		}()
 
 		for res := range out {
-			switch v := res.(type) {
-			case File:
-				newFiles = append(newFiles, v)
-			case error:
-				if v != nil {
-					if strings.Contains(v.Error(), "cannot decode file head") {
-						skippedDecodeErrors++
-						core.Info("skipping unreadable file in batch %s due to decode failure: %v", segment, v)
-						continue
-					}
-					errX = v
-					core.Info("error synchronizing file in batch %s: %v", segment, v)
-				}
+			if res.err != nil {
+				errX = res.err
+				core.Info("error synchronizing file in batch %s: %v", segment, res.err)
+				continue
 			}
+			if !res.synced {
+				skippedNotForMe++
+				continue
+			}
+			newFiles = append(newFiles, res.file)
 		}
 	}
 	if errX != nil {
 		return nil, core.Error(core.GenericError, "errors occurred during synchronization", errX)
 	}
-	if skippedDecodeErrors > 0 {
-		core.Info("vault sync skipped %d unreadable files due to decode errors", skippedDecodeErrors)
+	if skippedNotForMe > 0 {
+		core.Info("vault sync skipped %d files addressed to other users", skippedNotForMe)
 	}
 
 	core.End("synchronized vault %s in %s, %d new files", v.ID, time.Since(now), len(newFiles))
 	return newFiles, nil
 
+}
+
+func ignoredStoreNameKey(storeDir, storeName string) string {
+	return path.Join(storeDir, "h", storeName)
+}
+
+func (v *Vault) isIgnoredStoreName(storeDir, storeName string) bool {
+	key := ignoredStoreNameKey(storeDir, storeName)
+	v.ignoredStoreNamesMu.RLock()
+	_, ok := v.ignoredStoreNames[key]
+	v.ignoredStoreNamesMu.RUnlock()
+	return ok
+}
+
+func (v *Vault) markIgnoredStoreName(storeDir, storeName string) {
+	key := ignoredStoreNameKey(storeDir, storeName)
+	v.ignoredStoreNamesMu.Lock()
+	v.ignoredStoreNames[key] = struct{}{}
+	v.ignoredStoreNamesMu.Unlock()
+}
+
+func (v *Vault) unmarkIgnoredStoreName(storeDir, storeName string) {
+	key := ignoredStoreNameKey(storeDir, storeName)
+	v.ignoredStoreNamesMu.Lock()
+	delete(v.ignoredStoreNames, key)
+	v.ignoredStoreNamesMu.Unlock()
 }
 
 func (v *Vault) findLastStoreDirIn(baseDir string) (string, error) {
@@ -205,40 +229,61 @@ func (v *Vault) getKnownFilesNames(storeDir string) (map[string]bool, error) {
 	return files, nil
 }
 
-func (v *Vault) syncronizeFile(storeDir, storeName string) (File, error) {
+// syncronizeFile returns:
+//   - file + synced=true when a new file head is imported
+//   - synced=false with nil error when the file is valid but not addressed to this user
+//   - error for real failures
+func (v *Vault) syncronizeFile(storeDir, storeName string) (file File, synced bool, err error) {
 	core.Start("storeDir %s, storeName %s", storeDir, storeName)
 
 	n := path.Join(storeDir, "h", storeName)
 	head, err := store.ReadFile(v.store, n)
 	if err != nil {
-		return File{}, core.Error(core.FileError, "cannot read sealed file %s", n, err)
+		return File{}, false, core.Error(core.FileError, "cannot read sealed file %s", n, err)
 	}
 
-	file, err := decodeHead(v.Realm, head, v.UserSecret, v.getKey, v.getUserByShortId)
+	file, notForMe, retryAfterBlockchain, err := decodeHead(head, v.UserSecret, v.getKey, v.getUserByShortId)
 	if err != nil {
-		return File{}, core.Error(core.FileError, "cannot decode file head %s", n, err)
+		return File{}, false, core.Error(core.FileError, "cannot decode file head %s", n, err)
+	}
+	if retryAfterBlockchain {
+		// Access/user mapping can be temporarily stale; import blockchain and retry once.
+		if err := v.syncBlockChain(); err != nil {
+			return File{}, false, core.Error(core.GenericError, "cannot sync blockchain before decoding %s", n, err)
+		}
+		file, notForMe, retryAfterBlockchain, err = decodeHead(head, v.UserSecret, v.getKey, v.getUserByShortId)
+		if err != nil {
+			return File{}, false, core.Error(core.FileError, "cannot decode file head %s after blockchain sync", n, err)
+		}
+		if retryAfterBlockchain {
+			core.Info("file %s still has unknown author after blockchain sync, deferring", n)
+			return File{}, false, nil
+		}
+	}
+	if notForMe {
+		v.markIgnoredStoreName(storeDir, storeName)
+		core.End("file %s is addressed to another user, skipping", n)
+		return File{}, false, nil
 	}
 
 	id, err := strconv.ParseUint(storeName, 36, 64)
 	if err != nil {
-		return File{}, core.Error(core.FileError, "cannot parse file ID from store name %s", storeName, err)
+		return File{}, false, core.Error(core.FileError, "cannot parse file ID from store name %s", storeName, err)
 	}
 	file.Id = FileId(id)
 	file.AllocatedSize = int64(len(head)) + file.Size
 	file.StoreDir = storeDir
 	file.StoreName = storeName
-	file.Realm = v.Realm
 	file, err = v.writeFileHeadToDB(file)
 	if err != nil {
-		return File{}, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
+		return File{}, false, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
 	}
-	v.newFiles.L.Lock()
-	v.newFiles.Broadcast()
-	v.newFiles.L.Unlock()
+	v.signalUpdate()
+	v.unmarkIgnoredStoreName(storeDir, storeName)
 
 	v.allocatedSize += file.AllocatedSize
 	core.End("file %s, size %d, allocated %d, modTime %s", file.Name, file.Size, file.AllocatedSize, file.ModTime)
-	return file, nil
+	return file, true, nil
 }
 
 func (v *Vault) writeFileHeadToDB(file File) (File, error) {
@@ -256,7 +301,6 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 		"storeDir":       file.StoreDir,
 		"storeName":      file.StoreName,
 		"name":           name,
-		"group":          file.Realm,
 		"localCopy":      file.LocalCopy,
 		"modTime":        file.ModTime.UnixMilli(),
 		"size":           file.Size,
@@ -266,6 +310,7 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 		"keyId":          file.KeyId,
 		"encryptionType": 0,
 		"attrs":          file.Attrs,
+		"ecRecipient":    file.EcRecipient,
 	})
 	if err != nil {
 		return File{}, core.Error(core.DbError, "cannot set file %s/%s", dir, name, err)
@@ -284,9 +329,8 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 	dir, name = path.Split(dir)
 	dir = path.Clean(dir)
 	if dir != "." {
-		logrus.Infof("Setting directory: %s", dir)
-		_, err = v.DB.Exec("SET_DIR", sqlx.Args{"vault": v.ID, "dir": dir, "group": file.Realm,
-			"name": name})
+		core.Info("setting directory: %s", dir)
+		_, err = v.DB.Exec("SET_DIR", sqlx.Args{"vault": v.ID, "dir": dir, "name": name})
 		if err != nil {
 			return File{}, core.Error(core.DbError, "cannot set directory %s/%s", dir, name, err)
 		}

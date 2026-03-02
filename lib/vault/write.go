@@ -9,9 +9,66 @@ import (
 	"time"
 
 	"github.com/stregato/bao/lib/core"
+	"github.com/stregato/bao/lib/security"
 	"github.com/stregato/bao/lib/store"
 	"golang.org/x/crypto/blake2b"
 )
+
+func parseNameEncryptionPolicy(name string) (cleanName, encMethod string, ecRecipient security.PublicID, err error) {
+	cleanName = name
+	encMethod = "aes"
+
+	idx := strings.LastIndex(name, ",")
+	if idx < 0 || idx == len(name)-1 {
+		return cleanName, encMethod, "", nil
+	}
+	token := name[idx+1:]
+	switch {
+	case token == "aes":
+		cleanName = name[:idx]
+		encMethod = "aes"
+	case token == "public":
+		cleanName = name[:idx]
+		encMethod = "public"
+	case strings.HasPrefix(token, "ec="):
+		recipient := security.PublicID(strings.TrimSpace(strings.TrimPrefix(token, "ec=")))
+		if recipient == "" {
+			return "", "", "", core.Error(core.ParseError, "empty ec recipient in %s", name)
+		}
+		cleanName = name[:idx]
+		encMethod = "ec"
+		ecRecipient = recipient
+	default:
+		// Unknown token: treat as plain file name suffix for compatibility.
+	}
+	return cleanName, encMethod, ecRecipient, nil
+}
+
+func (v *Vault) encryptionMethodFromName(name string) (encMethod string, ecRecipient security.PublicID, err error) {
+	_, encMethod, ecRecipient, err = parseNameEncryptionPolicy(name)
+	return encMethod, ecRecipient, err
+}
+
+func nameWithoutEncryptionToken(name string) string {
+	cleanName, _, _, _ := parseNameEncryptionPolicy(name)
+	return cleanName
+}
+
+func (v *Vault) encryptionMethodForFile(file File) (encMethod string, ecRecipient security.PublicID, err error) {
+	switch {
+	case file.Flags&EcEncryption != 0:
+		if file.EcRecipient == "" {
+			return "", "", core.Error(core.ParseError, "missing ec recipient for file %s", file.Name)
+		}
+		return "ec", file.EcRecipient, nil
+	case file.Flags&AESEncryption != 0:
+		return "aes", "", nil
+	case file.KeyId == 0:
+		return "public", "", nil
+	default:
+		return "aes", "", nil
+	}
+}
 
 func getIv(name string) ([]byte, error) {
 	core.Start("getting IV for name %s", name)
@@ -49,15 +106,18 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 		return File{}, core.Error(core.FileError, "cannot write file %s in vaultgroup %s: allocated size limit exceeded", dest, v.ID, os.ErrPermission)
 	}
 
-	baseFolder := path.Join(v.Realm.String(), DataFolder)
+	baseFolder := v.dataRoot()
+
+	cleanDest, encMethod, ecRecipient, err := parseNameEncryptionPolicy(dest)
+	if err != nil {
+		return File{}, err
+	}
 
 	var keyId uint64
-	var err error
 
-	switch v.Realm {
-	case All:
-	case Home:
-	default:
+	switch encMethod {
+	case "public", "ec":
+	default: // aes
 		keyId, _, err = v.getLastKeyFromDB()
 		if err != nil {
 			return File{}, core.Error(core.DbError, "cannot get key id for %v", dest, err)
@@ -66,8 +126,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 
 	file := File{
 		//		Id:            FileId(snowId),                                                 // Generate a unique file ID using Snowflake algorithm
-		Name:          dest,                                                           // Name of the file
-		Realm:         v.Realm,                                                        // Realm to which the file belongs
+		Name:          cleanDest,                                                      // Name of the file
 		Size:          size,                                                           // Size of the file
 		AllocatedSize: 0,                                                              // Allocated size, to be updated later
 		ModTime:       now,                                                            // Use current time as modification time
@@ -79,6 +138,19 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 		StoreName:     generateFilename(now),                                          // Name of the file in the storage
 		AuthorId:      v.UserSecret.PublicIDMust(),                                    // Author ID
 		KeyId:         keyId,                                                          // Key ID for encryption
+	}
+	switch encMethod {
+	case "public":
+		file.KeyId = 0
+		file.Flags &^= AESEncryption | EcEncryption
+	case "ec":
+		file.KeyId = 0
+		file.EcRecipient = ecRecipient
+		file.Flags |= EcEncryption
+		file.Flags &^= AESEncryption
+	default: // aes
+		file.Flags |= AESEncryption
+		file.Flags &^= EcEncryption
 	}
 
 	file, err = v.writeFileHeadToDB(file)
@@ -104,7 +176,11 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	}()
 
 	file.Flags &= ^PendingWrite // Clear the PendingWrite flag
-	head, err := encodeHead(v.Realm, file, v.UserSecret, v.getKey)
+	encMethod, ecRecipient, err := v.encryptionMethodForFile(file)
+	if err != nil {
+		return err
+	}
+	head, err := encodeHead(encMethod, file, ecRecipient, v.UserSecret, v.getKey)
 	if err != nil {
 		return core.Error(core.EncodeError, "cannot encode head in Bao.Write", err)
 	}
@@ -121,7 +197,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 		core.Start("path %s", storePath)
 		err := store.WriteFile(v.store, storePath, head)
 		if err != nil {
-			err2 = core.Error(core.FileError, "cannot write head for file %s in Bao.Write, name %v, group %v",
+			err2 = core.Error(core.FileError, "cannot write head for file %s in Bao.Write, name %v, storeDir %v",
 				file.Name, file.StoreName, file.StoreDir, err)
 		} else {
 			v.notifyChange(path.Join(file.StoreDir, file.StoreName))
@@ -132,20 +208,20 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	if file.LocalCopy != "" {
 		f, err := os.Open(file.LocalCopy)
 		if err != nil {
-			return core.Error(core.FileError, "cannot open local file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot open local file %s in Bao.Write, name %v, storeDir %v",
 				file.LocalCopy, file.Name, file.StoreDir, err)
 		}
 		defer f.Close()
 
-		r, err := encryptReader(v.Realm, file, f, v.getKey)
+		r, err := encryptReader(encMethod, file, ecRecipient, f, v.getKey)
 		if err != nil {
-			return core.Error(core.FileError, "cannot encrypt reader for file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot encrypt reader for file %s in Bao.Write, name %v, storeDir %v",
 				file.Name, file.LocalCopy, file.StoreDir, err)
 		}
 		storePath := path.Join(file.StoreDir, "b", file.StoreName)
 		err = v.store.Write(storePath, r, progress)
 		if err != nil {
-			return core.Error(core.FileError, "cannot write body for file %s in Bao.Write, name %v, group %v",
+			return core.Error(core.FileError, "cannot write body for file %s in Bao.Write, name %v, storeDir %v",
 				file.Name, file.LocalCopy, file.StoreDir, err)
 		}
 	}
@@ -173,7 +249,7 @@ func (v *Vault) Write(dest, source string, attrs []byte, options IOOption, progr
 
 	file, err := v.writeRecord(dest, source, PendingWrite, attrs)
 	if err != nil {
-		return File{}, core.Error(core.FileError, "cannot write record for file %s in %s", dest, v.Realm, err)
+		return File{}, core.Error(core.FileError, "cannot write record for file %s", dest, err)
 	}
 
 	switch {
@@ -203,7 +279,7 @@ func (v *Vault) scheduleChangeFile() {
 	}
 	time.AfterFunc(time.Second, func() {
 		v.ioWritingWg.Wait()
-		store.WriteFile(v.store, path.Join(v.Realm.String(), DataFolder, ".change"), []byte{})
+		store.WriteFile(v.store, path.Join(v.dataRoot(), ".change"), []byte{})
 		defer atomic.StoreInt32(&v.ioLastChangeRunning, 0)
 	})
 	core.End("scheduled change file")

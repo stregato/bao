@@ -28,7 +28,7 @@ func newStressTestStash(t *testing.T, cfg Config) (*Vault, *sqlx.DB) {
 	store := store.LoadTestStore(t, stressDefaultStoreURLLabel)
 
 	owner := security.NewPrivateIDMust()
-	s, err := Create(Users, owner, store, db, cfg)
+	s, err := Create(owner, store, db, cfg)
 	core.TestErr(t, err, "Create failed: %v")
 
 	t.Cleanup(func() {

@@ -29,7 +29,7 @@ const changeFileName = ".change"
 // 	if err != nil {
 // 		return core.Error(core.FileError, "failed to stat change file in notifyFileChange, name %s: %v", name, err)
 // 	}
-// 	err = v.DB.SetSetting(path.Join(changeFileName, v.ID, v.Realm.String(), baseDir), "", stat.ModTime().Unix(), 0, nil)
+// 	err = v.DB.SetSetting(path.Join(changeFileName, v.ID, baseDir), "", stat.ModTime().Unix(), 0, nil)
 // 	if err != nil {
 // 		return core.Error(core.DbError, "failed to update modTime in notifyFileChange, name %s: %v", name, err)
 // 	}
@@ -38,7 +38,7 @@ const changeFileName = ".change"
 // }
 
 func (v *Vault) hasChanged(baseDir string) (bool, error) {
-	_, lastChangeTime, _, _, err := v.DB.GetSetting(path.Join(changeFileName, v.ID, v.Realm.String(), baseDir))
+	_, lastChangeTime, _, _, err := v.DB.GetSetting(path.Join(changeFileName, v.ID, baseDir))
 	if err == sqlx.ErrNoRows {
 		// If there is no setting for the change file, we consider it as changed, because we cannot determine the last change time.
 		return true, nil

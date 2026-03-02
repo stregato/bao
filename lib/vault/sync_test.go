@@ -24,7 +24,7 @@ func TestStashSynchronize(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(Users, aliceSecret, store, db1, Config{})
+	s, err := Create(aliceSecret, store, db1, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = s.SetAttribute(0, "name", "alice")
@@ -49,7 +49,7 @@ func TestStashSynchronize(t *testing.T) {
 	db2 := sqlx.NewTestDB(t, "vault2.db", "")
 	defer db2.Close()
 
-	s, err = Open(Users, bobSecret, alice, store, db2)
+	s, err = Open(bobSecret, alice, store, db2)
 	core.TestErr(t, err, "Open failed: %v")
 
 	access, err := s.GetAccess(bob)

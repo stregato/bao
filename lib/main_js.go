@@ -46,7 +46,7 @@ func asPromise(fn func(this js.Value, args []js.Value) (any, error)) js.Func {
 }
 
 func baoCreate(this js.Value, args []js.Value) (any, error) {
-	realm := args[0].String()
+	_ = args[0].String() // TODO(realm-removal): remove realm from JS API.
 	var err error
 
 	// Create in-memory database
@@ -63,8 +63,8 @@ func baoCreate(this js.Value, args []js.Value) (any, error) {
 
 	id := security.NewPrivateIDMust()
 
-	// Create vault with new signature: (realm, privateID, store, db, config)
-	demoVault, err = libbao.Create(libbao.Realm(realm), id, s, demoDB, libbao.Config{})
+	// Create vault with signature: (privateID, store, db, config)
+	demoVault, err = libbao.Create(id, s, demoDB, libbao.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func baoCreate(this js.Value, args []js.Value) (any, error) {
 }
 
 func baoOpen(this js.Value, args []js.Value) (any, error) {
-	realm := args[0].String()
+	_ = args[0].String() // TODO(realm-removal): remove realm from JS API.
 	var err error
 	if demoDB == nil {
 		demoDB, err = sqlx.Open("mem", "", "")
@@ -90,8 +90,8 @@ func baoOpen(this js.Value, args []js.Value) (any, error) {
 	id := security.NewPrivateIDMust()
 	authorID := security.PublicID("")
 
-	// Open vault with new signature: (realm, privateID, authorID, store, db)
-	demoVault, err = libbao.Open(libbao.Realm(realm), id, authorID, s, demoDB)
+	// Open vault with signature: (privateID, authorID, store, db)
+	demoVault, err = libbao.Open(id, authorID, s, demoDB)
 	if err != nil {
 		return nil, err
 	}

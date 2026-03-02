@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"path"
 	"testing"
 	"time"
 
@@ -25,7 +24,7 @@ func TestVaultWrite(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, aliceSecret, store, db, Config{})
+	v, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = v.SyncAccess(0, AccessChange{
@@ -47,7 +46,7 @@ func TestVaultWrite(t *testing.T) {
 	db.Close()
 
 	db = sqlx.NewTestDB(t, "vault2.db", "")
-	v, err = Open(Users, bobSecret, alice, store, db)
+	v, err = Open(bobSecret, alice, store, db)
 	core.TestErr(t, err, "Open failed: %v")
 
 	ls, err := v.ReadDir("folder", time.Time{}, 0, 0)
@@ -90,7 +89,7 @@ func TestWritePublic(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(All, alice, store, db, Config{})
+	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
@@ -115,7 +114,7 @@ func TestWriteHome(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Home, aliceSecret, store, db, Config{})
+	v, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	err = v.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
@@ -125,25 +124,36 @@ func TestWriteHome(t *testing.T) {
 	err = os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 	core.TestErr(t, err, "WriteFile failed: %v")
 	attrs := []byte{1, 2, 3, 4, 5}
-	file, err := v.Write(path.Join(bob.String(), "simple.txt"), tmpFile, attrs, 0, nil)
+	name := "shared/simple.txt,ec=" + bob.String()
+	file, err := v.Write(name, tmpFile, attrs, 0, nil)
 	core.TestErr(t, err, "Write failed")
+	core.Assert(t, file.Flags&EcEncryption != 0, "Expected EC encryption flag")
+	core.Assert(t, file.Flags&AESEncryption == 0, "Expected AES encryption flag to be disabled")
+	core.Assert(t, file.EcRecipient == bob, "Expected EC recipient to be Bob")
 
 	_, err = v.WaitFiles(context.Background(), file.Id)
 	core.TestErr(t, err, "Sync failed")
+
+	st, err := v.Stat("shared/simple.txt")
+	core.TestErr(t, err, "Stat failed: %v")
+	core.Assert(t, st.Flags&EcEncryption != 0, "Expected EC encryption flag in stat")
+	core.Assert(t, st.EcRecipient == bob, "Expected EC recipient in stat")
 	v.Close()
 	db.Close()
 
 	db = sqlx.NewTestDB(t, "vault2.db", "")
-	v, err = Open(Home, bobSecret, alice, store, db)
+	v, err = Open(bobSecret, alice, store, db)
 	core.TestErr(t, err, "Open failed: %v")
 
-	ls, err := v.ReadDir(bob.String(), time.Time{}, 0, 0)
+	ls, err := v.ReadDir("shared", time.Time{}, 0, 0)
 	core.TestErr(t, err, "ReadDir failed: %v")
-	core.Assert(t, len(ls) == 1, "Expected one file in Bob's home directory")
-	core.Assert(t, ls[0].Name == "simple.txt", "Expected file name to be 'simple.txt'")
+	core.Assert(t, len(ls) == 1, "Expected one file in shared directory")
+	core.Assert(t, ls[0].Name == "simple.txt", "Expected clean file name without encryption token")
+	core.Assert(t, ls[0].Flags&EcEncryption != 0, "Expected EC encryption flag in directory entry")
+	core.Assert(t, ls[0].EcRecipient == bob, "Expected EC recipient in directory entry")
 
 	tmpFile = t.TempDir() + "/simple2.txt"
-	_, err = v.Read(path.Join(bob.String(), "simple.txt"), tmpFile, 0, nil)
+	_, err = v.Read(name, tmpFile, 0, nil)
 	core.TestErr(t, err, "Read failed: %v")
 
 	content, err := os.ReadFile(tmpFile)
@@ -159,7 +169,7 @@ func TestWriteAttrs(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(Users, alice, store, db, Config{})
+	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	attrs := []byte{1, 2, 3, 4, 5}
@@ -190,7 +200,7 @@ func TestWriteNestedPath(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	v, err := Create(Users, alice, store, db, Config{})
+	v, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
 	tmpFile := t.TempDir() + "/nested.txt"
@@ -218,6 +228,8 @@ func TestWriteNestedPath(t *testing.T) {
 }
 
 func TestWriteWithSyncRelay(t *testing.T) {
+	requireSyncRelay(t, "wss://sync-relay.baolib.org")
+
 	alice, aliceSecret, err := security.NewKeyPair()
 	core.TestErr(t, err, "cannot create keys")
 	bob, bobSecret, err := security.NewKeyPair()
@@ -233,12 +245,12 @@ func TestWriteWithSyncRelay(t *testing.T) {
 		SyncRelay: "wss://sync-relay.baolib.org",
 	}
 
-	va, err := Create(Users, aliceSecret, store, db1, config)
+	va, err := Create(aliceSecret, store, db1, config)
 	core.TestErr(t, err, "Alice: Create failed: %v")
 
 	// Setup: Bob opens the same vault with sync relay
 	db2 := sqlx.NewTestDB(t, "vault_bob.db", "")
-	vb, err := Open(Users, bobSecret, alice, store, db2)
+	vb, err := Open(bobSecret, alice, store, db2)
 	core.TestErr(t, err, "Bob: Open failed: %v")
 
 	// Give both sync relays a moment to connect

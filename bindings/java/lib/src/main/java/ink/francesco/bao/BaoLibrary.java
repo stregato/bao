@@ -39,8 +39,8 @@ public interface BaoLibrary extends Library {
     Result bao_store_stat(long storeH, String path);
     Result bao_store_delete(long storeH, String path);
 
-    Result bao_vault_create(String realm, String identity, long storeH, long dbH, String settingsJson);
-    Result bao_vault_open(String realm, String identity, String author, long storeH, long dbH);
+    Result bao_vault_create(String ignoredRealm, String identity, long storeH, long dbH, String settingsJson);
+    Result bao_vault_open(String ignoredRealm, String identity, String author, long storeH, long dbH);
     Result bao_vault_close(long baoH);
     Result bao_vault_syncAccess(long baoH, long options, String changesJson);
     Result bao_vault_getAccess(long baoH, String userId);

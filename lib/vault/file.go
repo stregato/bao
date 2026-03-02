@@ -26,7 +26,6 @@ type FileId int64
 type File struct {
 	Id            FileId            `json:"id"`              // Unique identifier for the file in the database
 	Name          string            `json:"name"`            // Name of the file
-	Realm         Realm             `json:"realm"`           // Realm to which the file belongs
 	Size          int64             `json:"size"`            // Size of the file in bytes
 	AllocatedSize int64             `json:"allocatedSize"`   // Space allocated for the file in storage
 	ModTime       time.Time         `json:"modTime"`         // Modification time of the file
@@ -38,6 +37,7 @@ type File struct {
 	StoreDir      string            `json:"storeDir"`        // Directory in the store.where the file is located
 	StoreName     string            `json:"storeName"`       // Name of the file in the storage
 	AuthorId      security.PublicID `json:"authorId"`        // Author ID of the file
+	EcRecipient   security.PublicID `json:"ecRecipient"`     // Optional EC recipient public ID
 }
 
 // queryFileById retrieves a file by its ID from the database.
@@ -47,8 +47,8 @@ func (v *Vault) queryFileById(fileId FileId) (file File, ok bool, err error) {
 	var modTimeUnix int64
 	var dir, name string
 	err = v.DB.QueryRow("GET_FILE_BY_ID", sqlx.Args{"vault": v.ID, "id": fileId},
-		&file.Id, &file.StoreDir, &file.StoreName, &dir, &name, &file.Realm, &file.LocalCopy,
-		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs)
+		&file.Id, &file.StoreDir, &file.StoreName, &dir, &name, &file.LocalCopy,
+		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs, &file.EcRecipient)
 	if err == sqlx.ErrNoRows {
 		core.End("file not found")
 		return File{}, false, nil
@@ -68,6 +68,7 @@ func (v *Vault) queryFileById(fileId FileId) (file File, ok bool, err error) {
 func (v *Vault) queryFileByName(name string) (file File, ok bool, err error) {
 	core.Start("querying file by name %s", name)
 	var version int
+	name = nameWithoutEncryptionToken(name)
 	dir, name := path.Split(name)
 	dir = path.Clean(dir)
 
@@ -93,8 +94,8 @@ func (v *Vault) queryFileByName(name string) (file File, ok bool, err error) {
 	var modTimeUnix int64
 	err = v.DB.QueryRow("GET_FILE_BY_NAME", sqlx.Args{"vault": v.ID, "dir": dir, "name": name,
 		"version": version},
-		&file.Id, &dir, &file.Name, &file.Realm, &file.StoreDir, &file.StoreName, &file.LocalCopy,
-		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs)
+		&file.Id, &dir, &file.Name, &file.StoreDir, &file.StoreName, &file.LocalCopy,
+		&modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.AuthorId, &file.KeyId, &file.Attrs, &file.EcRecipient)
 	if err != nil {
 		if err == sqlx.ErrNoRows {
 			core.End("file not found")

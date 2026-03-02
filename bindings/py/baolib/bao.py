@@ -15,9 +15,6 @@ def set_bao_log_level(level: str):
     return consume(lib.bao_setLogLevel(e8(level)))
 
 
-Realm = str
-
-
 class PrivateID(str):
     """Private ID that can decode its cryptographic keys."""
     
@@ -356,16 +353,11 @@ class Vault:
     async_operation = 1 # write/read operations are async
     scheduled_operation = 2 # write/read operations are scheduled for a background time
     
-    users = Realm("users")
-    home = Realm("home")
-    all = Realm("all")
-    
     def __init__(self):
         self.hnd: int = 0
         self.id: str = ""
         self.userSecret: str = ""
         self.userId: str = ""
-        self.realm: str = ""
         self.store_config: Dict[str, Any] = {}
         self.author: str = ""
         self.config: Dict[str, Any] = {}
@@ -378,21 +370,20 @@ class Vault:
         s.id = info.get("id", "")
         s.userId = info.get("userId", "")
         s.userSecret = info.get("userSecret", "")
-        s.realm = info.get("realm", "")
         s.store_config = info.get("storeConfig", {})
         s.author = info.get("author", "")
         s.config = info.get("config", {})
         return s
 
     @staticmethod
-    def create(realm: Realm, identity: PrivateID, store: Store, db: DB, config: Dict[str, Any] = None) -> "Vault":
+    def create(identity: PrivateID, store: Store, db: DB, config: Dict[str, Any] = None) -> "Vault":
         config = config or {}
-        r = lib.bao_vault_create(e8(realm), e8(identity), store.hnd, db.hnd, j8(config))
+        r = lib.bao_vault_create(e8(""), e8(identity), store.hnd, db.hnd, j8(config))
         return Vault._from_result(r)
 
     @staticmethod
-    def open(realm: Realm, identity: PrivateID, author: PublicID, store: Store, db: DB) -> "Vault":
-        r = lib.bao_vault_open(e8(realm), e8(identity), e8(author), store.hnd, db.hnd)
+    def open(identity: PrivateID, author: PublicID, store: Store, db: DB) -> "Vault":
+        r = lib.bao_vault_open(e8(""), e8(identity), e8(author), store.hnd, db.hnd)
         return Vault._from_result(r)
 
     def close(self):

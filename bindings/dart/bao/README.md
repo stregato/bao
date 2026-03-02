@@ -42,13 +42,13 @@ Future<void> main() async {
   final store = await Store.open(storeConfig);
 
   // Create a new bao
-  final b = await Vault.create(privateId, db, store);
+  final b = await Vault.create(privateId, store, db);
 
   // Grant yourself read/write access
-  await b.syncAccess([AccessChange(users, accessReadWrite, publicId)]);
+  await b.syncAccess([AccessChange(publicId, accessReadWrite)]);
 
   // Write a file (attrs is optional metadata as bytes)
-  await b.write('hello.txt', users, Uint8List(0), '/path/to/local/file.txt', 0);
+  await b.write('hello.txt', attrs: Uint8List(0), src: '/path/to/local/file.txt');
 
   // List files
   final files = await b.readDir('', limit: 10);

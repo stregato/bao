@@ -42,8 +42,8 @@ func (v *Vault) ReadDir(dir string, since time.Time, afterId FileId, limit int) 
 	for rows.Next() {
 		var file File
 		var modTimeUnix int64
-		err = rows.Scan(&file.Id, &file.Name, &file.Realm, &file.LocalCopy, &modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.Attrs,
-			&file.AuthorId, &file.KeyId, &file.StoreDir, &file.StoreName)
+		err = rows.Scan(&file.Id, &file.Name, &file.LocalCopy, &modTimeUnix, &file.Size, &file.AllocatedSize, &file.Flags, &file.Attrs,
+			&file.AuthorId, &file.KeyId, &file.StoreDir, &file.StoreName, &file.EcRecipient)
 		if err != nil {
 			return nil, err
 		}

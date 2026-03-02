@@ -17,7 +17,7 @@ func TestOpen(t *testing.T) {
 	store := store.LoadTestStore(t, "test")
 	defer store.Close()
 
-	s, err := Create(Users, aliceSecret, store, db, Config{})
+	s, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "cannot create vault")
 
 	err = s.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
@@ -26,7 +26,7 @@ func TestOpen(t *testing.T) {
 	err = s.Close()
 	core.TestErr(t, err, "cannot close vault")
 
-	s, err = Open(Users, bobSecret, alice, store, db)
+	s, err = Open(bobSecret, alice, store, db)
 	core.TestErr(t, err, "cannot open vault")
 
 	accesses, err := s.GetAccesses()

@@ -340,8 +340,20 @@ DynamicLibrary loadBaoLibrary() {
     } catch (e) {
       // skip
     }
+  } else if (Platform.isAndroid) {
+    // Android packages native libs inside the APK as lib<name>.so.
+    // Try known sonames first.
+    const androidNames = ['libbao.so', 'libbao_arm64.so', 'libbao_amd64.so'];
+    for (final name in androidNames) {
+      try {
+        return DynamicLibrary.open(name);
+      } catch (_) {
+        // try next
+      }
+    }
   } else {
-    for (var file in _libraryPaths[arch]!) {
+    final candidates = _libraryPaths[arch] ?? const <String>[];
+    for (var file in candidates) {
       try {
         var libraryPath = File(file);
         // Load the dynamic library from the library path
@@ -350,6 +362,16 @@ DynamicLibrary loadBaoLibrary() {
       } catch (e) {
         //skip
       }
+    }
+  }
+
+  final candidates = _libraryPaths[arch] ?? const <String>[];
+  for (final file in candidates) {
+    try {
+      var lib = DynamicLibrary.open(file);
+      return lib;
+    } catch (_) {
+      // skip
     }
   }
 
@@ -367,14 +389,27 @@ Future<void> initBaoLibrary([int concurrency = 4]) async {
 }
 
 var _libraryPaths = {
-  'linux-amd64': ['lib/linux/libbao.so', 'libbao.so'],
-  'linux-arm64': ['lib/linux/libbao.so', 'libbao.so'],
+  'android-arm64': ['libbao.so', 'libbao_arm64.so'],
+  'android-amd64': ['libbao.so', 'libbao_amd64.so'],
+  'linux-amd64': [
+    'lib/linux/libbao.so',
+    'libbao.so',
+    'linux/libbao_amd64.so',
+    'libbao_amd64.so',
+  ],
+  'linux-arm64': [
+    'lib/linux/libbao.so',
+    'libbao.so',
+    'linux/libbao_arm64.so',
+    'libbao_arm64.so',
+  ],
   'macos-amd64': ['libbao_amd64.dylib'],
   'macos-arm64': [
     'libbao_arm64.dylib',
     '../../../build/darwin/libbao_arm64.dylib'
   ],
-  'windows-amd64': ['baod.dll'],
+  'windows-amd64': ['bao_amd64.dll', 'bao.dll', 'baod.dll'],
+  'windows-arm64': ['bao_arm64.dll', 'bao.dll'],
 };
 
 String _getArch() {
@@ -402,8 +437,12 @@ void setLogLevel(String level) {
 }
 
 List<String> getRecentLog(int n) {
-  var r = bindings.call('bao_core_getRecentLog', [n]);
-  return (r.list).map((e) => e as String).toList();
+  try {
+    var r = bindings.call('bao_core_getRecentLog', [n]);
+    return (r.list).map((e) => e as String).toList();
+  } catch (e) {
+    return ['Bao log unavailable: $e'];
+  }
 }
 
 void setHttpLog(String url) {
