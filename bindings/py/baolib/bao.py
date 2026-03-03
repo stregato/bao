@@ -350,8 +350,23 @@ class File:
         )
 
 class Vault:
-    async_operation = 1 # write/read operations are async
-    scheduled_operation = 2 # write/read operations are scheduled for a background time
+    @staticmethod
+    def _io_options_json(
+        async_op: bool = False,
+        scheduled: bool = False,
+        no_encryption: bool = False,
+        ec_recipient: Optional[PublicID] = None,
+    ) -> bytes:
+        payload: Dict[str, Any] = {}
+        if async_op:
+            payload["async"] = True
+        if scheduled:
+            payload["scheduled"] = True
+        if no_encryption:
+            payload["noEncryption"] = True
+        if ec_recipient:
+            payload["ecRecipient"] = str(ec_recipient)
+        return j8(payload)
     
     def __init__(self):
         self.hnd: int = 0
@@ -378,12 +393,12 @@ class Vault:
     @staticmethod
     def create(identity: PrivateID, store: Store, db: DB, config: Dict[str, Any] = None) -> "Vault":
         config = config or {}
-        r = lib.bao_vault_create(e8(""), e8(identity), store.hnd, db.hnd, j8(config))
+        r = lib.bao_vault_create(e8(identity), store.hnd, db.hnd, j8(config))
         return Vault._from_result(r)
 
     @staticmethod
     def open(identity: PrivateID, author: PublicID, store: Store, db: DB) -> "Vault":
-        r = lib.bao_vault_open(e8(""), e8(identity), e8(author), store.hnd, db.hnd)
+        r = lib.bao_vault_open(e8(identity), e8(author), store.hnd, db.hnd)
         return Vault._from_result(r)
 
     def close(self):
@@ -391,20 +406,23 @@ class Vault:
             consume(lib.bao_vault_close(self.hnd))
             self.hnd = 0
 
-    def sync_access(self, changes: List[AccessChange] = None, options: int = 0):
+    def sync_access(self, changes: List[AccessChange] = None, async_op: bool = False, scheduled: bool = False):
         '''
         Sync access changes from the remote store and optionaly apply new changes.
         
         :param self: Bao instance
         :param changes: List of access changes to apply
         :type changes: List[AccessChange]
-        :param options: Options for syncing access
-        :type options: int
+        :param async_op: Execute asynchronously
+        :type async_op: bool
+        :param scheduled: Schedule for later execution
+        :type scheduled: bool
         :return: Result of the sync operation
         :rtype: Any
         '''
         payload = [] if not changes else [asdict(c) for c in changes]
-        return consume(lib.bao_vault_syncAccess(self.hnd, options, j8(payload)))
+        io = self._io_options_json(async_op=async_op, scheduled=scheduled)
+        return consume(lib.bao_vault_syncAccess(self.hnd, io, j8(payload)))
 
     def get_accesses(self) -> Dict[PublicID, int]:
         return consume(lib.bao_vault_getAccesses(self.hnd)) or {}
@@ -412,7 +430,7 @@ class Vault:
     def get_access(self, user: PublicID) -> int:
         return int(consume(lib.bao_vault_getAccess(self.hnd, e8(user))) or 0)
 
-    def wait_files(self, file_ids: Optional[List[int]] = None):
+    def wait_files(self, timeout_ms: int = 0, file_ids: Optional[List[int]] = None):
         '''
         Wait for the specified files to be fully written/synced.
         
@@ -446,8 +464,9 @@ class Vault:
     def sync(self):
         return consume(lib.bao_vault_sync(self.hnd))
 
-    def set_attribute(self, name: str, value: str, options: int = 0):
-        return consume(lib.bao_vault_setAttribute(self.hnd, options, e8(name), e8(value)))
+    def set_attribute(self, name: str, value: str, async_op: bool = False, scheduled: bool = False):
+        io = self._io_options_json(async_op=async_op, scheduled=scheduled)
+        return consume(lib.bao_vault_setAttribute(self.hnd, io, e8(name), e8(value)))
 
     def get_attribute(self, name: str, author: PublicID):
         return consume(lib.bao_vault_getAttribute(self.hnd, e8(name), e8(author)))
@@ -463,18 +482,42 @@ class Vault:
     def stat(self, name: str) -> File:
         return File.from_dict(consume(lib.bao_vault_stat(self.hnd, e8(name))))
 
-    def read(self, name: str, dest: str, options: int = 0) -> File:
-        payload = consume(lib.bao_vault_read(self.hnd, e8(name), e8(dest), options))
+    def read(
+        self,
+        name: str,
+        dest: str,
+        async_op: bool = False,
+        scheduled: bool = False,
+        ec_recipient: Optional[PublicID] = None,
+    ) -> File:
+        io = self._io_options_json(async_op=async_op, scheduled=scheduled, ec_recipient=ec_recipient)
+        payload = consume(lib.bao_vault_read(self.hnd, e8(name), e8(dest), io))
         return File.from_dict(payload)
 
-    def write(self, dest: str, src: str = "", attrs: bytes = b"", options: int = 0) -> File:
+    def write(
+        self,
+        dest: str,
+        src: str = "",
+        attrs: bytes = b"",
+        async_op: bool = False,
+        scheduled: bool = False,
+        no_encryption: bool = False,
+        ec_recipient: Optional[PublicID] = None,
+    ) -> File:
         attrs = attrs or b""
         data = Data.from_byte_array(attrs)
-        r = lib.bao_vault_write(self.hnd, e8(dest), e8(src), data, options)
+        io = self._io_options_json(async_op=async_op, scheduled=scheduled, no_encryption=no_encryption, ec_recipient=ec_recipient)
+        r = lib.bao_vault_write(self.hnd, e8(dest), e8(src), data, io)
         return File.from_dict(consume(r))
 
-    def delete(self, name: str, options: int = 0):
-        return consume(lib.bao_vault_delete(self.hnd, e8(name), options))
+    def delete(
+        self,
+        name: str,
+        async_op: bool = False,
+        scheduled: bool = False,
+    ):
+        io = self._io_options_json(async_op=async_op, scheduled=scheduled)
+        return consume(lib.bao_vault_delete(self.hnd, e8(name), io))
 
     def versions(self, name: str) -> List[File]:
         payload = consume(lib.bao_vault_versions(self.hnd, e8(name)))

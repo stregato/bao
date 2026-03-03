@@ -33,7 +33,7 @@ func TestWaitUpdates(t *testing.T) {
 	defer vAlice.Close()
 
 	// Grant Bob access
-	err = vAlice.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
+	err = vAlice.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: bob})
 	core.TestErr(t, err, "cannot set access: %v")
 
 	// Bob opens the vault with sync relay
@@ -67,7 +67,7 @@ func TestWaitUpdates(t *testing.T) {
 		// Alice writes a file
 		tmpFile := t.TempDir() + "/test.txt"
 		os.WriteFile(tmpFile, []byte("test content"), 0644)
-		file, err := vAlice.Write("test.txt", tmpFile, nil, 0, nil)
+		file, err := vAlice.Write("test.txt", tmpFile, nil, IOOption{})
 		core.TestErr(t, err, "Write failed: %v")
 
 		// Wait for file to be written
@@ -102,7 +102,7 @@ func TestWaitUpdates(t *testing.T) {
 		// Alice writes another file
 		tmpFile := t.TempDir() + "/test2.txt"
 		os.WriteFile(tmpFile, []byte("test content 2"), 0644)
-		file, err := vAlice.Write("test2.txt", tmpFile, nil, 0, nil)
+		file, err := vAlice.Write("test2.txt", tmpFile, nil, IOOption{})
 		core.TestErr(t, err, "Write failed: %v")
 
 		_, err = vAlice.WaitFiles(context.Background(), file.Id)

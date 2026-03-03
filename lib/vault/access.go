@@ -13,34 +13,34 @@ type AccessChange struct {
 
 // SyncAccess applies the provided access changes and optionally flushes them to the store.
 func (v *Vault) SyncAccess(options IOOption, changes ...AccessChange) error {
-	core.Start("syncing access changes %v with options %d", changes, options)
+	core.Start("syncing access changes %v with options %v", changes, options)
 
 	nChanges := 0
 	var err error
 	cs, err := v.convertToChanges(changes)
 	if err != nil {
-		return core.Error(core.AuthError, "cannot convert access changes for domain %s", v.legacyRealm(), err)
+		return core.Error(core.AuthError, "cannot convert access changes for vault %s", v.ID, err)
 	}
 	for _, c := range cs {
 		bc, err := marshalChange(c)
 		if err != nil {
-			return core.Error(core.GenericError, "cannot match block changes for domain %s", v.legacyRealm(), err)
+			return core.Error(core.GenericError, "cannot match block changes for vault %s", v.ID, err)
 		}
 		err = v.stageBlockChange(bc)
 		if err != nil {
-			return core.Error(core.GenericError, "cannot stage block change for domain %s", v.legacyRealm(), err)
+			return core.Error(core.GenericError, "cannot stage block change for vault %s", v.ID, err)
 		}
 		core.Info("staged %s in %s", c, v.ID)
 	}
 	nChanges += len(cs)
 
 	switch {
-	case options&AsyncOperation != 0:
-		go v.syncBlockChain()
-	case options&ScheduledOperation != 0:
+	case options.Async:
+		go v.syncBlockChain(false)
+	case options.Scheduled:
 		// do nothing, will be synced later
 	default:
-		if err := v.syncBlockChain(); err != nil {
+		if err := v.syncBlockChain(false); err != nil {
 			return core.Error(core.AuthError, "cannot synchronize blockchain for access changes", err)
 		}
 	}
@@ -120,14 +120,14 @@ func (v *Vault) convertToChanges(changes []AccessChange) ([]Change, error) {
 		if len(recipients) > 0 {
 			addKey, err := v.createAddKey(recipients, keyId, key)
 			if err != nil {
-				return nil, core.Error(core.GenericError, "cannot create add key for domain %s", v.legacyRealm(), err)
+				return nil, core.Error(core.GenericError, "cannot create add key for vault %s", v.ID, err)
 			}
 			delta = append(delta, &addKey)
 			keysForScope = map[uint64]security.AESKey{keyId: key}
 		}
 	}
 
-	core.Info("successfully created %d changes for domain %s", len(delta), v.legacyRealm())
+	core.Info("successfully created %d changes for vault %s", len(delta), v.ID)
 	core.End("")
 	return delta, nil
 }
@@ -143,11 +143,11 @@ func (v *Vault) createAddKey(ids []security.PublicID, keyId uint64, key security
 	for _, id := range ids {
 		ekey, err := security.EcEncrypt(id, key)
 		if err != nil {
-			return AddKey{}, core.Error(core.EncodeError, "cannot encrypt key for user %s in domain %s", id, v.legacyRealm(), err)
+			return AddKey{}, core.Error(core.EncodeError, "cannot encrypt key for user %s in vault %s", id, v.ID, err)
 		}
 		addKey.EncryptedKeys[id] = ekey
 	}
-	core.End("created add key for domain %s, keyId %d", v.legacyRealm(), keyId)
+	core.End("created add key for vault %s, keyId %d", v.ID, keyId)
 	return addKey, nil
 }
 
@@ -165,7 +165,7 @@ func (v *Vault) getUserByShortId(shortId uint64) (security.PublicID, error) {
 
 // GetAccesses retrieves the access rights.
 func (v *Vault) GetAccesses() (Accesses, error) {
-	core.Start("group %s", v.legacyRealm())
+	core.Start("vault %s", v.ID)
 	var accesses Accesses = make(Accesses)
 
 	rows, err := v.DB.Query("GET_ACCESSES", sqlx.Args{"vault": v.ID})
@@ -175,7 +175,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		return accesses, nil
 	}
 	if err != nil {
-		return nil, core.Error(core.DbError, "cannot get users for group %s", v.legacyRealm(), err)
+		return nil, core.Error(core.DbError, "cannot get users for vault %s", v.ID, err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -183,7 +183,7 @@ func (v *Vault) GetAccesses() (Accesses, error) {
 		var access Access
 		err = rows.Scan(&id, &access)
 		if err != nil {
-			return nil, core.Error(core.GenericError, "cannot scan user %s for group %s", id, v.legacyRealm(), err)
+			return nil, core.Error(core.GenericError, "cannot scan user %s for vault %s", id, v.ID, err)
 		}
 		accesses[id] = access
 	}

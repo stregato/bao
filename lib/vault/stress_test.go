@@ -115,7 +115,7 @@ func TestConcurrentWritesStress(t *testing.T) {
 				payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, writer, i)
 				totalWritten.Add(int64(payloadSize))
 				src := makePayload(t, sourceDir, fmt.Sprintf("src-%02d-%03d", writer, i), payloadSize)
-				file, err := vault.Write(name, src, nil, AsyncOperation, nil)
+				file, err := vault.Write(name, src, nil, IOOption{Async: true})
 				if err != nil {
 					errCh <- err
 					return
@@ -170,7 +170,7 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 		payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, i)
 		src := makePayload(t, sourceDir, fmt.Sprintf("init-%03d", i), payloadSize)
 		initWritten.Add(int64(payloadSize))
-		_, err := vault.Write(name, src, nil, 0, nil)
+		_, err := vault.Write(name, src, nil, IOOption{})
 		core.TestErr(t, err, "initial write failed: %v")
 		names[i] = name
 	}
@@ -198,7 +198,7 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 				payloadSize := deterministicPayloadSize(payloadBaseSize, payloadSizeRange, idx, i)
 				totalWritten.Add(int64(payloadSize))
 				src := makePayload(t, sourceDir, fmt.Sprintf("writer-%02d-%03d", idx, i), payloadSize)
-				file, err := vault.Write(name, src, nil, AsyncOperation, nil)
+				file, err := vault.Write(name, src, nil, IOOption{Async: true})
 				if err != nil {
 					writeErrCh <- err
 					return
@@ -220,7 +220,7 @@ func TestConcurrentReadWriteStress(t *testing.T) {
 			for i := 0; i < iterations; i++ {
 				name := names[(idx*iterations+i)%len(names)]
 				dest := filepath.Join(readerTmp, fmt.Sprintf("read-%02d-%03d", idx, i))
-				file, err := vault.Read(name, dest, 0, nil)
+				file, err := vault.Read(name, dest, IOOption{}, nil)
 				if err != nil {
 					readErrCh <- err
 					return
@@ -296,7 +296,7 @@ func TestRetentionCleanupStress(t *testing.T) {
 	for i := 0; i < totalFiles; i++ {
 		name := fmt.Sprintf("retain-%03d.dat", i)
 		src := makePayload(t, sourceDir, fmt.Sprintf("retain-src-%03d", i), payload)
-		file, err := vault.Write(name, src, nil, 0, nil)
+		file, err := vault.Write(name, src, nil, IOOption{})
 		core.TestErr(t, err, "initial retention write failed: %v")
 		infos = append(infos, fileInfo{id: file.Id, storeDir: file.StoreDir, storeName: file.StoreName, name: name})
 	}
@@ -305,7 +305,7 @@ func TestRetentionCleanupStress(t *testing.T) {
 
 	retentionThreshold := core.Now().Add(-vault.Config.Retention).Add(-1 * time.Hour)
 	oldStoreTS := retentionThreshold.Add(-1 * time.Hour).UTC().Format("20060102150405")
-	oldStoreDir := filepath.Join(DataFolder, string(Home), oldStoreTS)
+	oldStoreDir := filepath.Join(DataFolder, oldStoreTS)
 	oldDirPath := filepath.Join(baseStorePath, oldStoreDir)
 	core.TestErr(t, os.MkdirAll(filepath.Join(oldDirPath, "h"), 0o755), "mkdir old head failed: %v")
 	core.TestErr(t, os.MkdirAll(filepath.Join(oldDirPath, "b"), 0o755), "mkdir old body failed: %v")

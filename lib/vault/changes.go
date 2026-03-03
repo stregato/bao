@@ -61,7 +61,7 @@ func (c Config) Apply(v *Vault, author security.PublicID) error {
 }
 
 func (c Config) String() string {
-	return fmt.Sprintf("Config: retention=%v, maxStorage=%d, segmentInterval=%v, syncCooldown=%v, waitTimeout=%v, filesSyncPeriod=%v, cleanupPeriod=%v, blockChainSyncPeriod=%v, ioThrottle=%d",
+	return fmt.Sprintf("Config: retention=%v, maxStorage=%d, segmentInterval=%v, syncCooldown=%v, waitTimeout=%v, filesSyncPeriod=%v, cleanupPeriod=%v, blockChainSyncPeriod=%v, blockSyncOverlap=%v, bodyReadyCheckThreshold=%d, ioThrottle=%d",
 		c.Retention,
 		c.MaxStorage,
 		c.SegmentInterval,
@@ -70,6 +70,8 @@ func (c Config) String() string {
 		c.FilesSyncPeriod,
 		c.CleanupPeriod,
 		c.BlockChainSyncPeriod,
+		c.BlockSyncOverlap,
+		c.BodyReadyCheckThreshold,
 		c.IoThrottle)
 }
 
@@ -203,7 +205,7 @@ func (a *AddAttribute) String() string {
 }
 
 func (v *Vault) addKey(keyId uint64, key []byte) error {
-	core.Start("key %d, vault %s", keyId, v.legacyRealm())
+	core.Start("key %d, vault %s", keyId, v.ID)
 	if keyId == 0 {
 		core.End("key ID is zero, no key to add")
 		return nil

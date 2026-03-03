@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stregato/bao/lib/core"
@@ -22,18 +24,6 @@ type BlockFlags byte
 
 const (
 	NewKey BlockFlags = 1 << iota
-)
-
-type Realm string
-
-func (r Realm) String() string {
-	return string(r)
-}
-
-const (
-	Users Realm = "users" // Group for regular users
-	Home  Realm = "home"  // Group for administrators
-	All   Realm = "all"   // Group for public access
 )
 
 type Access byte
@@ -77,6 +67,16 @@ const (
 	BlockTypeSettings BlockType = iota
 	BlockTypeChanges
 )
+
+const blockNameBase36Width = 13
+
+func blockNameFromSnowID(id uint64) string {
+	name := strconv.FormatUint(id, 36)
+	if len(name) >= blockNameBase36Width {
+		return name
+	}
+	return strings.Repeat("0", blockNameBase36Width-len(name)) + name
+}
 
 type BlockChange struct {
 	Type    ChangeType // Type of the change (AddAccess, ChangeKey, etc.)
@@ -202,6 +202,37 @@ func (v *Vault) getLastBlockHash() ([]byte, error) {
 	return lastHash, nil
 }
 
+func (v *Vault) getKnownBlockNamesAndLastName() (map[string]struct{}, string, error) {
+	core.Start("")
+	rows, err := v.DB.Query("GET_BLOCK_NAMES_AND_SHOW_IDS", sqlx.Args{"vault": v.ID})
+	if err != nil {
+		return nil, "", core.Error(core.DbError, "cannot list known blocks", err)
+	}
+	defer rows.Close()
+
+	names := map[string]struct{}{}
+	var maxShowID uint64
+	var hasShowID bool
+	for rows.Next() {
+		var name string
+		var showID uint64
+		if err := rows.Scan(&name, &showID); err != nil {
+			return nil, "", core.Error(core.DbError, "cannot read known block row", err)
+		}
+		names[name] = struct{}{}
+		if !hasShowID || showID > maxShowID {
+			maxShowID = showID
+			hasShowID = true
+		}
+	}
+	lastName := ""
+	if hasShowID {
+		lastName = blockNameFromSnowID(maxShowID)
+	}
+	core.End("known blocks %d, last name %s", len(names), lastName)
+	return names, lastName, nil
+}
+
 func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 	core.Start("name %s", name)
 	blockPath := path.Join(v.blockChainRoot(), name)
@@ -255,7 +286,7 @@ func (v *Vault) importBlockFromStorage(name string) (hash []byte, err error) {
 	return hash, nil
 }
 
-func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
+func (v *Vault) importBlocksFromStorage(force bool) (hash []byte, err error) {
 	core.Start("")
 	hash, err = v.getLastBlockHash()
 	if err != nil {
@@ -265,7 +296,16 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 		hash = make([]byte, security.SignatureSize)
 	}
 
-	entries, err := v.store.ReadDir(v.blockChainRoot(), store.Filter{})
+	afterName := ""
+	filter := store.Filter{}
+	knownNames, afterName, err := v.getKnownBlockNamesAndLastName()
+	if err != nil {
+		return nil, core.Error(core.DbError, "cannot load known blocks", err)
+	}
+	if !force {
+		filter.AfterName = afterName
+	}
+	entries, err := v.store.ReadDir(v.blockChainRoot(), filter)
 	if os.IsNotExist(err) {
 		core.End("0 blocks imported, blockchain directory does not exist")
 		return hash, nil
@@ -282,6 +322,12 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 		if entry.IsDir() {
 			continue
 		}
+		if entry.Name() == changeFileName {
+			continue
+		}
+		if _, found := knownNames[entry.Name()]; found {
+			continue
+		}
 		nextHash, err := v.importBlockFromStorage(entry.Name())
 		if err != nil {
 			return nil, core.Error(core.GenericError, "cannot import block %s from store", entry.Name(), err)
@@ -291,7 +337,7 @@ func (v *Vault) importBlocksFromStorage() (hash []byte, err error) {
 			hash = nextHash
 		}
 	}
-	core.End("%d blocks imported, last hash %x", cnt, hash)
+	core.End("%d blocks imported, last hash %x, afterName %s", cnt, hash, afterName)
 	return hash, nil
 }
 
@@ -319,7 +365,7 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		return false, core.Error(core.EncodeError, "cannot encode block", err)
 	}
 
-	name := fmt.Sprintf("%020d", block.SnowID)
+	name := blockNameFromSnowID(block.SnowID)
 	blockPath := path.Join(v.blockChainRoot(), name)
 
 	_, err = v.store.Stat(blockPath)
@@ -349,6 +395,9 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	v.notifyChange(blockPath)
+	if err := v.touchChangeFile(v.blockChainRoot()); err != nil {
+		core.Info("cannot update blockchain guard file for %s: %v", blockPath, err)
+	}
 
 	for _, bc := range blockChanges {
 		c, err := unmarshalChange(bc)
@@ -380,16 +429,35 @@ func (v *Vault) exportBlocksToStorage(hash []byte) (retry bool, err error) {
 	return true, nil
 }
 
-func (v *Vault) syncBlockChain() error {
+func (v *Vault) syncBlockChain(force bool) error {
 	core.Start("")
 	now := core.Now()
 	v.blockChainMu.Lock()
 	defer v.blockChainMu.Unlock()
+	baseDir := v.blockChainRoot()
+
+	blockChanges, err := v.getStagedChanges()
+	if err != nil {
+		return core.Error(core.DbError, "cannot get staged changes before blockchain sync", err)
+	}
+	hasLocalChanges := len(blockChanges) > 0
+
+	changed, err := v.hasChanged(baseDir, force)
+	if err != nil {
+		return core.Error(core.GenericError, "cannot determine if blockchain has changed", err)
+	}
+	if !changed && !hasLocalChanges {
+		core.End("no blockchain changes detected")
+		return nil
+	}
+	if !changed && hasLocalChanges {
+		core.Info("blockchain guard unchanged but %d staged local changes present; continuing sync", len(blockChanges))
+	}
 
 	var success bool
 	var cnt int
 	for !success && cnt < 10 {
-		lastHash, err := v.importBlocksFromStorage()
+		lastHash, err := v.importBlocksFromStorage(force)
 		if err != nil {
 			return core.Error(core.GenericError, "cannot import blocks from store.", err)
 		}
@@ -398,10 +466,14 @@ func (v *Vault) syncBlockChain() error {
 		if err != nil {
 			return core.Error(core.GenericError, "cannot export changes to store.", err)
 		}
+		cnt++
 	}
 
 	if cnt == 10 {
 		return core.Error(core.GenericError, "cannot sync blockchain after %d attempts", cnt)
+	}
+	if err := v.markChangedAsSeen(baseDir); err != nil {
+		core.Info("cannot mark blockchain guard file as seen for %s: %v", baseDir, err)
 	}
 
 	core.End("done in %v", core.Now().Sub(now))

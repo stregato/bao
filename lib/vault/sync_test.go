@@ -27,17 +27,17 @@ func TestStashSynchronize(t *testing.T) {
 	s, err := Create(aliceSecret, store, db1, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = s.SetAttribute(0, "name", "alice")
+	err = s.SetAttribute(IOOption{}, "name", "alice")
 	core.TestErr(t, err, "SetAttribute failed: %v")
 
-	err = s.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
+	err = s.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: bob})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
 	os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 
 	// Write a file to the vault
-	file, err := s.Write("simple.txt", tmpFile, nil, 0, nil)
+	file, err := s.Write("simple.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write failed: %v")
 	s.Close()
 

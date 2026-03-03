@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/stregato/bao/lib/core"
 	"golang.org/x/net/websocket"
@@ -69,21 +70,78 @@ func (v *Vault) relayLoop() {
 	dataPrefix := v.dataRoot()
 
 	for name := range v.syncRelayCh {
+		core.Info("relay loop received event for vault %s: %s", v.ID, name)
 		switch {
 		case strings.HasPrefix(name, blockchainPrefix+"/"):
-			v.syncBlockChain()
+			core.Info("relay loop triggering blockchain sync for vault %s due to %s", v.ID, name)
+			v.syncBlockChain(true)
 		case strings.HasPrefix(name, dataPrefix+"/"):
+			core.Info("relay loop triggering data sync for vault %s due to %s", v.ID, name)
 			now := core.Now()
 			dir, name := path.Split(name)
 			dir = path.Clean(dir)
-			_, synced, err := v.syncronizeFile(dir, name)
+			file, synced, deferred, err := v.syncronizeFile(dir, name)
 			if err != nil {
 				core.Error("failed to sync file %s/%s/%s: %v", v.ID, dir, name, err)
+			} else if deferred {
+				v.scheduleDeferredRelayRetry(dir, name, file.Size)
 			} else if synced {
 				v.lastSyncAt = now
 			}
 		}
 	}
+}
+
+func relayDeferredRetryDelay(size int64) time.Duration {
+	switch {
+	case size > 100*1024*1024:
+		return 8 * time.Second
+	case size > 20*1024*1024:
+		return 5 * time.Second
+	default:
+		return 2 * time.Second
+	}
+}
+
+func (v *Vault) scheduleDeferredRelayRetry(storeDir, storeName string, size int64) {
+	key := path.Join(storeDir, storeName)
+
+	v.relayRetryMu.Lock()
+	if _, exists := v.relayRetry[key]; exists {
+		v.relayRetryMu.Unlock()
+		return
+	}
+	v.relayRetry[key] = struct{}{}
+	v.relayRetryMu.Unlock()
+
+	delay := relayDeferredRetryDelay(size)
+	core.Info("scheduling deferred relay retry for %s in %s", key, delay)
+	go func() {
+		time.Sleep(delay)
+		defer func() {
+			v.relayRetryMu.Lock()
+			delete(v.relayRetry, key)
+			v.relayRetryMu.Unlock()
+		}()
+
+		if v.syncRelayCh == nil {
+			return
+		}
+
+		file, synced, deferred, err := v.syncronizeFile(storeDir, storeName)
+		if err != nil {
+			core.Error("deferred relay retry failed for %s: %v", key, err)
+			return
+		}
+		if deferred {
+			core.Info("deferred relay retry still waiting for body readiness: %s", key)
+			return
+		}
+		if synced {
+			v.lastSyncAt = core.Now()
+			core.Info("deferred relay retry imported file %s size %d", key, file.Size)
+		}
+	}()
 }
 
 func (v *Vault) cleanupSyncRelay() {
@@ -180,14 +238,17 @@ func readWatchEvents(conn *websocket.Conn, server string) {
 		// Extract vaultID and clientID from message format "vaultID:clientID:filename"
 		parts := strings.SplitN(raw, ":", 3)
 		if len(parts) != 3 {
+			core.Info("sync relay received malformed event on %s: %q", server, raw)
 			continue
 		}
 		vaultID := parts[0]
 		clientID := parts[1]
 		name := strings.TrimSpace(parts[2])
 		if name == "" {
+			core.Info("sync relay received empty filename event on %s for vault %s", server, vaultID)
 			continue
 		}
+		core.Info("sync relay received event on %s: vault=%s sender=%s name=%s", server, vaultID, clientID, name)
 
 		sendToSubscribers(server, name, vaultID, clientID)
 	}
@@ -274,12 +335,22 @@ func sendToSubscribers(server string, name string, vaultID string, senderClientI
 		core.End("no subscribers for vaultID %s", vaultID)
 		return
 	}
+	delivered := 0
+	skippedSender := 0
+	inactive := 0
 	for clientID, v := range subs {
-		if clientID != senderClientID && v.syncRelayCh != nil {
+		if clientID == senderClientID {
+			skippedSender++
+			continue
+		}
+		if v.syncRelayCh != nil {
 			go safeSend(v.syncRelayCh, name)
+			delivered++
+		} else {
+			inactive++
 		}
 	}
-	core.End("sent to %d subscribers", len(subs))
+	core.End("subscribers=%d delivered=%d skippedSender=%d inactive=%d", len(subs), delivered, skippedSender, inactive)
 }
 
 func dropWatchClient(server string, client *syncClient) {

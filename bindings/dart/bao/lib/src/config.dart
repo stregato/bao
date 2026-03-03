@@ -28,6 +28,9 @@ class Config {
   /// How often to sync the blockchain in milliseconds (default: 600000 - 10 minutes)
   final int? blockChainSyncPeriod;
 
+  /// Overlap window used when listing blockchain files (default: 3600000 - 1 hour)
+  final int? blockSyncOverlap;
+
   /// Maximum number of concurrent I/O operations (default: 10)
   final int? ioThrottle;
 
@@ -41,6 +44,7 @@ class Config {
     this.filesSyncPeriod,
     this.cleanupPeriod,
     this.blockChainSyncPeriod,
+    this.blockSyncOverlap,
     this.ioThrottle,
   });
 
@@ -60,6 +64,8 @@ class Config {
         'cleanupPeriod': cleanupPeriod,
       if (blockChainSyncPeriod != null && blockChainSyncPeriod! > 0)
         'blockChainSyncPeriod': blockChainSyncPeriod,
+      if (blockSyncOverlap != null && blockSyncOverlap! > 0)
+        'blockSyncOverlap': blockSyncOverlap,
       if (ioThrottle != null && ioThrottle! > 0) 'ioThrottle': ioThrottle,
     };
   }

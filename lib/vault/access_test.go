@@ -27,7 +27,7 @@ func TestAccess(t *testing.T) {
 	s, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = s.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: alice.PublicIDMust()})
+	err = s.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: alice.PublicIDMust()})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
 	accesses, err := s.GetAccesses()
@@ -56,7 +56,7 @@ func TestAccessTwoUsers(t *testing.T) {
 	sa, err := Create(alice, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = sa.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: alicePublic})
+	err = sa.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: alicePublic})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 	sa.Close()
 
@@ -70,7 +70,7 @@ func TestAccessTwoUsers(t *testing.T) {
 	core.Assert(t, access == 0, "Bob should have no access")
 	sb.Close()
 
-	err = sa.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob.PublicIDMust()})
+	err = sa.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: bob.PublicIDMust()})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
 	sb, err = Open(bob, alicePublic, store, db)

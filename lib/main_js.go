@@ -46,7 +46,7 @@ func asPromise(fn func(this js.Value, args []js.Value) (any, error)) js.Func {
 }
 
 func baoCreate(this js.Value, args []js.Value) (any, error) {
-	_ = args[0].String() // TODO(realm-removal): remove realm from JS API.
+	_ = args[0].String()
 	var err error
 
 	// Create in-memory database
@@ -72,7 +72,7 @@ func baoCreate(this js.Value, args []js.Value) (any, error) {
 }
 
 func baoOpen(this js.Value, args []js.Value) (any, error) {
-	_ = args[0].String() // TODO(realm-removal): remove realm from JS API.
+	_ = args[0].String()
 	var err error
 	if demoDB == nil {
 		demoDB, err = sqlx.Open("mem", "", "")

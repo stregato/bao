@@ -20,7 +20,7 @@ func TestOpen(t *testing.T) {
 	s, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "cannot create vault")
 
-	err = s.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
+	err = s.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: bob})
 	core.TestErr(t, err, "cannot set access")
 
 	err = s.Close()

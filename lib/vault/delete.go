@@ -23,7 +23,7 @@ func (v *Vault) Delete(name string, options IOOption) error {
 	storeDir := path.Join(baseFolder, getSegmentDir(v.Config.SegmentInterval))
 	storeName := generateFilename(now)
 
-	_, err = v.writeRecord(name, "", PendingWrite|Deleted, nil)
+	_, err = v.writeRecord(name, "", PendingWrite|Deleted, nil, options)
 	if err != nil {
 		return core.Error(core.FileError, "cannot write record for file %s", name, err)
 	}
@@ -45,9 +45,9 @@ func (v *Vault) Delete(name string, options IOOption) error {
 	}
 
 	switch {
-	case options&AsyncOperation != 0:
+	case options.Async:
 		go v.wipe(file)
-	case options&ScheduledOperation != 0:
+	case options.Scheduled:
 		// Do nothing, wipe will be handled later
 	default:
 		err = v.wipe(file)

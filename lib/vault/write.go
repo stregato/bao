@@ -87,7 +87,7 @@ func getIv(name string) ([]byte, error) {
 	return hash.Sum(nil)[:16], nil
 }
 
-func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (File, error) {
+func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte, options IOOption) (File, error) {
 	core.Start("writing record to %s", dest)
 	now := core.Now()
 
@@ -111,6 +111,14 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte) (Fil
 	cleanDest, encMethod, ecRecipient, err := parseNameEncryptionPolicy(dest)
 	if err != nil {
 		return File{}, err
+	}
+	if options.NoEncryption {
+		encMethod = "public"
+		ecRecipient = ""
+	}
+	if options.EcRecipient != "" {
+		encMethod = "ec"
+		ecRecipient = options.EcRecipient
 	}
 
 	var keyId uint64
@@ -200,7 +208,6 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 			err2 = core.Error(core.FileError, "cannot write head for file %s in Bao.Write, name %v, storeDir %v",
 				file.Name, file.StoreName, file.StoreDir, err)
 		} else {
-			v.notifyChange(path.Join(file.StoreDir, file.StoreName))
 			core.End("")
 		}
 		wg.Done()
@@ -233,6 +240,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 	v.UpdateFileAllocatedSize(file.Id, file.Size+int64(len(head)))
 	v.UpdateFileFlags(file.Id, file.Flags) // Update the file flags in the database
 	v.allocatedSize += file.Size + int64(len(head))
+	v.notifyChange(path.Join(file.StoreDir, file.StoreName))
 
 	core.End("elapsed %s", core.Since(now))
 	return nil
@@ -243,21 +251,22 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 // It creates a record for the file in the database and writes the file to the store.
 // If the Sync option is set, it writes the file synchronously, otherwise it writes it asynchronously.
 // If the Scheduled option is set, it schedules the file to be written later and the parameter `progress` is ignored.
-func (v *Vault) Write(dest, source string, attrs []byte, options IOOption, progress chan int64) (File, error) {
-	core.Start("dest %s, source %s, options %d", dest, source, options)
+func (v *Vault) Write(dest, source string, attrs []byte, options IOOption) (File, error) {
+	core.Start("dest %s, source %s", dest, source)
 	now := core.Now()
+	progress := options.Progress
 
-	file, err := v.writeRecord(dest, source, PendingWrite, attrs)
+	file, err := v.writeRecord(dest, source, PendingWrite, attrs, options)
 	if err != nil {
 		return File{}, core.Error(core.FileError, "cannot write record for file %s", dest, err)
 	}
 
 	switch {
-	case options&AsyncOperation != 0: // If Async is set, we can write the file asynchronously
+	case options.Async: // If Async is set, we can write the file asynchronously
 		v.scheduleIo(file.Id) // Schedule the IO operation
 		go v.writeFile(file, progress)
 
-	case options&ScheduledOperation != 0: // If Scheduled is set, let use the scheduler to write the file later
+	case options.Scheduled: // If Scheduled is set, let use the scheduler to write the file later
 	default:
 		// If neither Async nor Scheduled is set, we can write the file synchronously
 		err = v.writeFile(file, progress)

@@ -201,22 +201,22 @@ late ArgsiS libStoreStat;
 late ArgsiS libStoreDelete;
 
 // Bao functions
-late Argssiis libBaoCreate;
-late ArgsiSSii libBaoOpen;
+late ArgsSiis libBaoCreate;
+late ArgsiSSii2 libBaoOpen;
 late Argsi libBaoClose;
-late Argsiis libBaoSyncAccess;
+late ArgsiSS libBaoSyncAccess;
 late Argsi libBaoGetAccesses;
 late ArgsiS libBaoGetAccess;
 late ArgsiiS libBaoWaitFiles;
 late Argsi libBaoSync;
-late Argsiiss libBaoSetAttribute;
+late ArgsiSSS libBaoSetAttribute;
 late ArgsiSS libBaoGetAttribute;
 late ArgsiS libBaoGetAttributes;
 late ArgsiSiii libBaoReadDir;
 late ArgsiS libBaoStat;
-late ArgsiSSi libBaoRead;
-late ArgsiSSDi libBaoWrite;
-late ArgsiSi libBaoDelete;
+late ArgsiSSS libBaoRead;
+late ArgsiSSDS libBaoWrite;
+late ArgsiSS libBaoDelete;
 late ArgsiS libBaoGetAuthor;
 late ArgsiS libBaoVersions;
 late Argsi libBaoAllocatedSize;
@@ -277,12 +277,12 @@ void loadFunctions(DynamicLibrary lib) {
   libStoreDelete = lib.lookupFunction<ArgsIS, ArgsiS>('bao_store_delete');
 
   libBaoCreate =
-      lib.lookupFunction<ArgsSSIIS, Argssiis>("bao_vault_create");
+      lib.lookupFunction<ArgsSIIS, ArgsSiis>("bao_vault_create");
   libBaoOpen =
-      lib.lookupFunction<ArgsSSSII, ArgsiSSii>("bao_vault_open");
+      lib.lookupFunction<ArgsSSII, ArgsiSSii2>("bao_vault_open");
   libBaoClose = lib.lookupFunction<ArgsI, Argsi>("bao_vault_close");
   libBaoSyncAccess =
-      lib.lookupFunction<ArgsIiS, Argsiis>("bao_vault_syncAccess");
+      lib.lookupFunction<ArgsISS, ArgsiSS>("bao_vault_syncAccess");
   libBaoGetAccesses =
       lib.lookupFunction<ArgsI, Argsi>("bao_vault_getAccesses");
   libBaoGetAccess = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_getAccess");
@@ -290,7 +290,7 @@ void loadFunctions(DynamicLibrary lib) {
       lib.lookupFunction<ArgsIIS, ArgsiiS>("bao_vault_waitFiles");
   libBaoSync = lib.lookupFunction<ArgsI, Argsi>("bao_vault_sync");
   libBaoSetAttribute =
-      lib.lookupFunction<ArgsIiSS, Argsiiss>("bao_vault_setAttribute");
+      lib.lookupFunction<ArgsISSS, ArgsiSSS>("bao_vault_setAttribute");
   libBaoGetAttribute =
       lib.lookupFunction<ArgsISS, ArgsiSS>("bao_vault_getAttribute");
   libBaoGetAttributes =
@@ -298,9 +298,9 @@ void loadFunctions(DynamicLibrary lib) {
   libBaoReadDir =
       lib.lookupFunction<ArgsISIIi, ArgsiSiii>("bao_vault_readDir");
   libBaoStat = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_stat");
-  libBaoRead = lib.lookupFunction<ArgsISSI, ArgsiSSi>("bao_vault_read");
-    libBaoWrite = lib.lookupFunction<ArgsISSDI, ArgsiSSDi>("bao_vault_write");
-    libBaoDelete = lib.lookupFunction<ArgsISi, ArgsiSi>("bao_vault_delete");
+  libBaoRead = lib.lookupFunction<ArgsISSS, ArgsiSSS>("bao_vault_read");
+  libBaoWrite = lib.lookupFunction<ArgsISSDS, ArgsiSSDS>("bao_vault_write");
+  libBaoDelete = lib.lookupFunction<ArgsISS, ArgsiSS>("bao_vault_delete");
   libBaoGetAuthor = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_getAuthor");
   libBaoVersions = lib.lookupFunction<ArgsIS, ArgsiS>("bao_vault_versions");
   libBaoAllocatedSize =

@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class Vault {
@@ -25,13 +24,13 @@ public class Vault {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     static public Vault create(String identity, Store store, DB db, Map<String, Object> settings) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_create("", identity, store.hnd, db.hnd, mapper.writeValueAsString(settings));
+        Result r = BaoLibrary.instance.bao_vault_create(identity, store.hnd, db.hnd, mapper.writeValueAsString(settings));
         r.check();
         return fromResult(r);
     }
 
     static public Vault open(String identity, String author, Store store, DB db) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_open("", identity, author, store.hnd, db.hnd);
+        Result r = BaoLibrary.instance.bao_vault_open(identity, author, store.hnd, db.hnd);
         r.check();
         return fromResult(r);
     }
@@ -71,9 +70,34 @@ public class Vault {
         }
     }
 
-    public void syncAccess(List<AccessChange> changes, long options) throws JsonProcessingException {
-        Result r = BaoLibrary.instance.bao_vault_syncAccess(hnd, options, mapper.writeValueAsString(changes));
+    private String ioOptionsJson(boolean async, boolean scheduled, boolean noEncryption, String ecRecipient)
+            throws Exception {
+        Map<String, Object> io = new HashMap<>();
+        if (async) {
+            io.put("async", true);
+        }
+        if (scheduled) {
+            io.put("scheduled", true);
+        }
+        if (noEncryption) {
+            io.put("noEncryption", true);
+        }
+        if (ecRecipient != null && !ecRecipient.isEmpty()) {
+            io.put("ecRecipient", ecRecipient);
+        }
+        return mapper.writeValueAsString(io);
+    }
+
+    public void syncAccess(List<AccessChange> changes, boolean async, boolean scheduled) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_syncAccess(
+                hnd,
+                ioOptionsJson(async, scheduled, false, null),
+                mapper.writeValueAsString(changes));
         r.check();
+    }
+
+    public void syncAccess(List<AccessChange> changes) throws Exception {
+        syncAccess(changes, false, false);
     }
 
     public int getAccess(String userId) throws Exception {
@@ -111,9 +135,17 @@ public class Vault {
         return r.bool();
     }
 
-    public void setAttribute(String name, String value, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_setAttribute(hnd, options, name, value);
+    public void setAttribute(String name, String value, boolean async, boolean scheduled) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_setAttribute(
+                hnd,
+                ioOptionsJson(async, scheduled, false, null),
+                name,
+                value);
         r.check();
+    }
+
+    public void setAttribute(String name, String value) throws Exception {
+        setAttribute(name, value, false, false);
     }
 
     public String getAttribute(String name, String author) throws Exception {
@@ -144,18 +176,43 @@ public class Vault {
         return r.string();
     }
 
-    public FileInfo read(String name, String dest, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_read(hnd, name, dest, options);
+    public FileInfo read(String name, String dest, boolean async, boolean scheduled, String ecRecipient) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_read(
+                hnd,
+                name,
+                dest,
+                ioOptionsJson(async, scheduled, false, ecRecipient));
         return FileInfo.fromMap(r.map());
     }
 
-    public FileInfo write(String dest, byte[] attrs, String src, long options) throws Exception {
-        Result r = BaoLibrary.instance.bao_vault_write(hnd, dest, src, new Data(attrs), options);
+    public FileInfo read(String name, String dest, boolean async, boolean scheduled) throws Exception {
+        return read(name, dest, async, scheduled, null);
+    }
+
+    public FileInfo read(String name, String dest) throws Exception {
+        return read(name, dest, false, false, null);
+    }
+
+    public FileInfo write(String dest, byte[] attrs, String src, boolean async, boolean scheduled, boolean noEncryption, String ecRecipient) throws Exception {
+        Result r = BaoLibrary.instance.bao_vault_write(
+                hnd,
+                dest,
+                src,
+                new Data(attrs),
+                ioOptionsJson(async, scheduled, noEncryption, ecRecipient));
         return FileInfo.fromMap(r.map());
     }
 
-    public void delete(String name, long options) throws Exception {
-        BaoLibrary.instance.bao_vault_delete(hnd, name, options).check();
+    public FileInfo write(String dest, byte[] attrs, String src) throws Exception {
+        return write(dest, attrs, src, false, false, false, null);
+    }
+
+    public void delete(String name, boolean async, boolean scheduled) throws Exception {
+        BaoLibrary.instance.bao_vault_delete(hnd, name, ioOptionsJson(async, scheduled, false, null)).check();
+    }
+
+    public void delete(String name) throws Exception {
+        delete(name, false, false);
     }
 
     public List<FileInfo> versions(String name) throws Exception {

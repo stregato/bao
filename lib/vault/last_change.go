@@ -6,6 +6,7 @@ import (
 
 	"github.com/stregato/bao/lib/core"
 	"github.com/stregato/bao/lib/sqlx"
+	"github.com/stregato/bao/lib/store"
 )
 
 const changeFileName = ".change"
@@ -37,7 +38,10 @@ const changeFileName = ".change"
 // 	return nil
 // }
 
-func (v *Vault) hasChanged(baseDir string) (bool, error) {
+func (v *Vault) hasChanged(baseDir string, force bool) (bool, error) {
+	if force {
+		return true, nil
+	}
 	_, lastChangeTime, _, _, err := v.DB.GetSetting(path.Join(changeFileName, v.ID, baseDir))
 	if err == sqlx.ErrNoRows {
 		// If there is no setting for the change file, we consider it as changed, because we cannot determine the last change time.
@@ -59,4 +63,27 @@ func (v *Vault) hasChanged(baseDir string) (bool, error) {
 	} else {
 		return false, nil
 	}
+}
+
+func (v *Vault) touchChangeFile(baseDir string) error {
+	err := store.WriteFile(v.store, path.Join(baseDir, changeFileName), []byte{})
+	if err != nil {
+		return core.Error(core.FileError, "failed to write change file for %s", baseDir, err)
+	}
+	return nil
+}
+
+func (v *Vault) markChangedAsSeen(baseDir string) error {
+	stat, err := v.store.Stat(path.Join(baseDir, changeFileName))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return core.Error(core.FileError, "failed to stat change file in markChangedAsSeen, baseDir %s", baseDir, err)
+	}
+	err = v.DB.SetSetting(path.Join(changeFileName, v.ID, baseDir), "", stat.ModTime().Unix(), 0, nil)
+	if err != nil {
+		return core.Error(core.DbError, "failed to update last change time in markChangedAsSeen, baseDir %s", baseDir, err)
+	}
+	return nil
 }

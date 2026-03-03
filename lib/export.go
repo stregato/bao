@@ -16,6 +16,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -75,6 +77,56 @@ func cInput(err error, i *C.char, v any) error {
 		return core.Error(core.ParseError, "failed to unmarshal input - %v: %s", err, data)
 	}
 	return nil
+}
+
+func cIOOption(i *C.char) (vault.IOOption, error) {
+	var opt vault.IOOption
+	if i == nil {
+		return opt, nil
+	}
+	raw := strings.TrimSpace(C.GoString(i))
+	if raw == "" {
+		return opt, nil
+	}
+	if raw[0] == '{' {
+		if err := json.Unmarshal([]byte(raw), &opt); err != nil {
+			return opt, core.Error(core.ParseError, "failed to unmarshal io option: %v", err)
+		}
+		// Backward compatibility: accept old keys from previous bindings.
+		var m map[string]any
+		if err := json.Unmarshal([]byte(raw), &m); err == nil {
+			if v, ok := m["flags"]; ok {
+				switch n := v.(type) {
+				case float64:
+					flags := int64(n)
+					opt.Async = opt.Async || flags&1 != 0
+					opt.Scheduled = opt.Scheduled || flags&2 != 0
+				}
+			}
+			if v, ok := m["encryption"].(string); ok {
+				switch strings.ToLower(strings.TrimSpace(v)) {
+				case "public":
+					opt.NoEncryption = true
+				case "ec":
+					if opt.EcRecipient == "" {
+						if rid, ok := m["ecRecipient"].(string); ok {
+							opt.EcRecipient = security.PublicID(strings.TrimSpace(rid))
+						}
+					}
+				}
+			}
+		}
+		return opt, nil
+	}
+
+	// Backward compatibility for older bindings that pass numeric flags as string.
+	flags, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return opt, core.Error(core.ParseError, "invalid io option payload: %s", raw, err)
+	}
+	opt.Async = flags&1 != 0
+	opt.Scheduled = flags&2 != 0
+	return opt, nil
 }
 
 var (
@@ -576,7 +628,7 @@ func bao_store_delete(storeH C.longlong, pathC *C.char) C.Result {
 // bao_vault_create creates a new vault with the specified identity, URL and configuration. A vault is a secure store.for keys and files. The function returns a handle to the bao.
 //
 //export bao_vault_create
-func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, dbH C.longlong, configC *C.char) C.Result {
+func bao_vault_create(userPrivateID *C.char, storeH C.longlong, dbH C.longlong, configC *C.char) C.Result {
 	core.Start("db handle %d", dbH)
 	core.TimeTrack()
 	d, err := dbs.Get(int64(dbH))
@@ -599,7 +651,6 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 	}
 
 	me := C.GoString(userPrivateID)
-	_ = C.GoString(realmC) // TODO(realm-removal): remove realm from C API.
 	s, err := vault.Create(security.PrivateID(me), store, d, config)
 	if err != nil {
 		core.LogError("cannot create vault for store %s", store.ID(), err)
@@ -613,7 +664,7 @@ func bao_vault_create(realmC *C.char, userPrivateID *C.char, storeH C.longlong, 
 // bao_vault_open opens an existing vault with the specified identity, author and URL. The function returns a handle to the bao.
 //
 //export bao_vault_open
-func bao_vault_open(realmC *C.char, meC *C.char, authorC *C.char, storeH C.longlong, dbH C.longlong) C.Result {
+func bao_vault_open(meC *C.char, authorC *C.char, storeH C.longlong, dbH C.longlong) C.Result {
 	core.Start("handle %d", dbH)
 	core.TimeTrack()
 
@@ -631,7 +682,6 @@ func bao_vault_open(realmC *C.char, meC *C.char, authorC *C.char, storeH C.longl
 
 	me := C.GoString(meC)
 	author := C.GoString(authorC)
-	_ = C.GoString(realmC) // TODO(realm-removal): remove realm from C API.
 	s, err := vault.Open(security.PrivateID(me), security.PublicID(author), store, d)
 	if err != nil {
 		core.LogError("cannot open vault for store %s", store.ID(), err)
@@ -663,7 +713,7 @@ func bao_vault_close(sH C.longlong) C.Result {
 // bao_vault_syncAccess sets and optionally flushes access rights for the specified vault.
 //
 //export bao_vault_syncAccess
-func bao_vault_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Result {
+func bao_vault_syncAccess(sH C.longlong, optionsC, changesC *C.char) C.Result {
 	core.Start("handle %d", sH)
 	core.TimeTrack()
 	s, err := vaults.Get(int64(sH))
@@ -679,7 +729,12 @@ func bao_vault_syncAccess(sH C.longlong, optionsC C.int, changesC *C.char) C.Res
 		return cResult(nil, 0, err)
 	}
 
-	err = s.SyncAccess(vault.IOOption(optionsC), changes...)
+	options, err := cIOOption(optionsC)
+	if err != nil {
+		return cResult(nil, 0, err)
+	}
+
+	err = s.SyncAccess(options, changes...)
 	if err != nil {
 		core.LogError("cannot synchronize access changes", err)
 		return cResult(nil, 0, err)
@@ -735,8 +790,6 @@ func bao_vault_getAccess(vH C.longlong, userC *C.char) C.Result {
 //
 //export bao_vault_sync
 func bao_vault_sync(vH C.longlong) C.Result {
-	var groups []vault.Realm
-
 	core.TimeTrack()
 	core.Start("handle %d", vH)
 	s, err := vaults.Get(int64(vH))
@@ -747,11 +800,11 @@ func bao_vault_sync(vH C.longlong) C.Result {
 
 	files, err := s.Sync()
 	if err != nil {
-		core.LogError("cannot synchronize groups %v in vault %d", groups, vH, err)
+		core.LogError("cannot synchronize vault %d", vH, err)
 		return cResult(nil, 0, err)
 	}
 
-	core.End("bao_sync successful for vault %d with groups: %v", vH, groups)
+	core.End("bao_sync successful for vault %d", vH)
 	return cResult(files, 0, nil)
 }
 
@@ -797,7 +850,7 @@ func bao_vault_waitFiles(sH C.longlong, timeoutMs C.longlong, fileIdsC *C.char) 
 // bao_vault_setAttribute sets an attribute for the current user
 //
 //export bao_vault_setAttribute
-func bao_vault_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char) C.Result {
+func bao_vault_setAttribute(sH C.longlong, optionsC, nameC, valueC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("handle %d", sH)
 	s, err := vaults.Get(int64(sH))
@@ -809,7 +862,11 @@ func bao_vault_setAttribute(sH C.longlong, options C.int, nameC, valueC *C.char)
 	name := C.GoString(nameC)
 	value := C.GoString(valueC)
 
-	err = s.SetAttribute(vault.IOOption(options), name, value)
+	options, err := cIOOption(optionsC)
+	if err != nil {
+		return cResult(nil, 0, err)
+	}
+	err = s.SetAttribute(options, name, value)
 	if err != nil {
 		core.LogError("cannot set attribute %s to %s in vault %d", name, value, sH, err)
 		return cResult(nil, 0, err)
@@ -929,16 +986,20 @@ func bao_vault_getAuthor(sH C.longlong, name *C.char) C.Result {
 // bao_vault_read reads the specified file from the bao.
 //
 //export bao_vault_read
-func bao_vault_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Result {
+func bao_vault_read(sH C.longlong, name, destC, optionsC *C.char) C.Result {
 	core.TimeTrack()
-	core.Start("called with sH: %d, name: %s, dest: %s, options: %d", sH, C.GoString(name), C.GoString(destC), options)
+	core.Start("called with sH: %d, name: %s, dest: %s", sH, C.GoString(name), C.GoString(destC))
 	s, err := vaults.Get(int64(sH))
+	if err != nil {
+		return cResult(nil, 0, err)
+	}
+	options, err := cIOOption(optionsC)
 	if err != nil {
 		return cResult(nil, 0, err)
 	}
 
 	dest := C.GoString(destC)
-	file, err := s.Read(C.GoString(name), dest, vault.IOOption(options), nil)
+	file, err := s.Read(C.GoString(name), dest, options, nil)
 	if err != nil {
 		core.LogError("cannot read file %s from vault %d", C.GoString(name), sH, err)
 		return cResult(nil, 0, err)
@@ -951,12 +1012,16 @@ func bao_vault_read(sH C.longlong, name, destC *C.char, options C.longlong) C.Re
 // bao_vault_write writes the specified file to the bao.
 //
 //export bao_vault_write
-func bao_vault_write(sH C.longlong, destC, sourceC *C.char, attrsC C.Data, options C.longlong) C.Result {
+func bao_vault_write(sH C.longlong, destC, sourceC *C.char, attrsC C.Data, optionsC *C.char) C.Result {
 	core.TimeTrack()
-	core.Start("called with sH: %d, dest: %s, source: %s, options: %d", sH, C.GoString(destC), C.GoString(sourceC), options)
+	core.Start("called with sH: %d, dest: %s, source: %s", sH, C.GoString(destC), C.GoString(sourceC))
 	s, err := vaults.Get(int64(sH))
 	if err != nil {
 		core.LogError("cannot get vault with handle %d: %v", sH, err)
+		return cResult(nil, 0, err)
+	}
+	options, err := cIOOption(optionsC)
+	if err != nil {
 		return cResult(nil, 0, err)
 	}
 
@@ -965,7 +1030,7 @@ func bao_vault_write(sH C.longlong, destC, sourceC *C.char, attrsC C.Data, optio
 
 	attrs := C.GoBytes(unsafe.Pointer(attrsC.ptr), C.int(attrsC.len))
 
-	file, err := s.Write(dest, source, attrs, vault.IOOption(options), nil)
+	file, err := s.Write(dest, source, attrs, options)
 	if err != nil {
 		core.LogError("cannot write file %s to vault %d, src %s: %v", dest, sH, source, err)
 		return cResult(nil, 0, err)
@@ -978,7 +1043,7 @@ func bao_vault_write(sH C.longlong, destC, sourceC *C.char, attrsC C.Data, optio
 // bao_vault_delete deletes the specified file from the bao.
 //
 //export bao_vault_delete
-func bao_vault_delete(sH C.longlong, nameC *C.char, options int) C.Result {
+func bao_vault_delete(sH C.longlong, nameC, optionsC *C.char) C.Result {
 	core.TimeTrack()
 	core.Start("called with sH: %d, name: %s", sH, C.GoString(nameC))
 	s, err := vaults.Get(int64(sH))
@@ -988,7 +1053,11 @@ func bao_vault_delete(sH C.longlong, nameC *C.char, options int) C.Result {
 	}
 
 	name := C.GoString(nameC)
-	err = s.Delete(name, vault.IOOption(options))
+	options, err := cIOOption(optionsC)
+	if err != nil {
+		return cResult(nil, 0, err)
+	}
+	err = s.Delete(name, options)
 	if err != nil {
 		core.LogError("cannot delete file %s from vault %d", name, sH, err)
 		return cResult(nil, 0, err)

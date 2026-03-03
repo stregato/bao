@@ -17,6 +17,7 @@ class Config:
         files_sync_period: How often to sync files (default: 600000ms - 10 minutes).
         cleanup_period: How often to run housekeeping (default: 3600000ms - 1 hour).
         block_chain_sync_period: How often to sync the blockchain (default: 600000ms - 10 minutes).
+        block_sync_overlap: Overlap window used when listing blockchain files (default: 3600000ms - 1 hour).
         io_throttle: Maximum number of concurrent I/O operations (default: 10).
     """
     
@@ -31,6 +32,7 @@ class Config:
         files_sync_period: int = 0,
         cleanup_period: int = 0,
         block_chain_sync_period: int = 0,
+        block_sync_overlap: int = 0,
         io_throttle: int = 0,
     ):
         """Initialize Vault configuration
@@ -45,6 +47,7 @@ class Config:
             files_sync_period: File sync interval in milliseconds (default: 0)
             cleanup_period: Housekeeping interval in milliseconds (default: 0)
             block_chain_sync_period: Blockchain sync interval in milliseconds (default: 0)
+            block_sync_overlap: Blockchain list overlap window in milliseconds (default: 0)
             io_throttle: Concurrent I/O operations limit (default: 0)
         """
         self.sync_relay = sync_relay
@@ -56,6 +59,7 @@ class Config:
         self.files_sync_period = files_sync_period
         self.cleanup_period = cleanup_period
         self.block_chain_sync_period = block_chain_sync_period
+        self.block_sync_overlap = block_sync_overlap
         self.io_throttle = io_throttle
     
     def to_dict(self) -> dict:
@@ -79,6 +83,8 @@ class Config:
             result['cleanupPeriod'] = self.cleanup_period
         if self.block_chain_sync_period > 0:
             result['blockChainSyncPeriod'] = self.block_chain_sync_period
+        if self.block_sync_overlap > 0:
+            result['blockSyncOverlap'] = self.block_sync_overlap
         if self.io_throttle > 0:
             result['ioThrottle'] = self.io_throttle
         return result

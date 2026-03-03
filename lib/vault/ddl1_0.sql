@@ -40,6 +40,9 @@ SELECT name, hash, payload FROM blocks WHERE vault=:vault ORDER BY showId ASC
 -- GET_LAST_HASH 1.0
 SELECT hash FROM blocks WHERE vault=:vault ORDER BY showId DESC LIMIT 1
 
+-- GET_BLOCK_NAMES_AND_SHOW_IDS 1.0
+SELECT name, showId FROM blocks WHERE vault=:vault ORDER BY showId ASC
+
 -- GET_BLOCKS_BY_HASH 1.0
 SELECT name, showId, payload FROM blocks WHERE vault=:vault AND hash=:hash
 

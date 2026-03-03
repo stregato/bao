@@ -27,7 +27,7 @@ func TestVaultWrite(t *testing.T) {
 	v, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = v.SyncAccess(0, AccessChange{
+	err = v.SyncAccess(IOOption{}, AccessChange{
 		UserId: bob,
 		Access: Read,
 	})
@@ -37,7 +37,7 @@ func TestVaultWrite(t *testing.T) {
 	err = os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 	core.TestErr(t, err, "WriteFile failed: %v")
 	attrs := []byte{1, 2, 3, 4, 5}
-	file, err := v.Write("folder/simple.txt", tmpFile, attrs, ScheduledOperation, nil)
+	file, err := v.Write("folder/simple.txt", tmpFile, attrs, IOOption{Scheduled: true})
 	core.TestErr(t, err, "Write failed: %v")
 
 	_, err = v.WaitFiles(context.Background(), file.Id)
@@ -63,7 +63,7 @@ func TestVaultWrite(t *testing.T) {
 	core.Assert(t, f.Id > 0, "")
 
 	tmpFile2 := t.TempDir() + "/simple2.txt"
-	file, err = v.Read("folder/simple.txt", tmpFile2, 0, nil)
+	file, err = v.Read("folder/simple.txt", tmpFile2, IOOption{}, nil)
 	core.TestErr(t, err, "Read failed: %v")
 	core.Assert(t, file.Name == "folder/simple.txt", "")
 	core.Assert(t, file.Size == 11, "")
@@ -78,7 +78,7 @@ func TestVaultWrite(t *testing.T) {
 	core.TestErr(t, err, "ReadFile failed: %v")
 	core.Assert(t, string(content) == "Hello World", "")
 
-	v.Delete("simple.txt", 0)
+	v.Delete("simple.txt", IOOption{})
 	v.Close()
 	db.Close()
 }
@@ -96,7 +96,7 @@ func TestWritePublic(t *testing.T) {
 	err = os.WriteFile(tmpFile, []byte("Hello World"), 0644)
 	core.TestErr(t, err, "WriteFile failed: %v")
 	attrs := []byte{1, 2, 3, 4, 5}
-	file, err := s.Write("simple.txt", tmpFile, attrs, 0, nil)
+	file, err := s.Write("simple.txt", tmpFile, attrs, IOOption{})
 	core.TestErr(t, err, "Write failed")
 
 	_, err = s.WaitFiles(context.Background(), file.Id)
@@ -117,7 +117,7 @@ func TestWriteHome(t *testing.T) {
 	v, err := Create(aliceSecret, store, db, Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = v.SyncAccess(0, AccessChange{Access: ReadWrite, UserId: bob})
+	err = v.SyncAccess(IOOption{}, AccessChange{Access: ReadWrite, UserId: bob})
 	core.TestErr(t, err, "SyncAccess failed: %v")
 
 	tmpFile := t.TempDir() + "/simple.txt"
@@ -125,7 +125,7 @@ func TestWriteHome(t *testing.T) {
 	core.TestErr(t, err, "WriteFile failed: %v")
 	attrs := []byte{1, 2, 3, 4, 5}
 	name := "shared/simple.txt,ec=" + bob.String()
-	file, err := v.Write(name, tmpFile, attrs, 0, nil)
+	file, err := v.Write(name, tmpFile, attrs, IOOption{})
 	core.TestErr(t, err, "Write failed")
 	core.Assert(t, file.Flags&EcEncryption != 0, "Expected EC encryption flag")
 	core.Assert(t, file.Flags&AESEncryption == 0, "Expected AES encryption flag to be disabled")
@@ -153,7 +153,7 @@ func TestWriteHome(t *testing.T) {
 	core.Assert(t, ls[0].EcRecipient == bob, "Expected EC recipient in directory entry")
 
 	tmpFile = t.TempDir() + "/simple2.txt"
-	_, err = v.Read(name, tmpFile, 0, nil)
+	_, err = v.Read(name, tmpFile, IOOption{}, nil)
 	core.TestErr(t, err, "Read failed: %v")
 
 	content, err := os.ReadFile(tmpFile)
@@ -173,7 +173,7 @@ func TestWriteAttrs(t *testing.T) {
 	core.TestErr(t, err, "Create failed: %v")
 
 	attrs := []byte{1, 2, 3, 4, 5}
-	file, err := s.Write("attrs.txt", "", attrs, 0, nil)
+	file, err := s.Write("attrs.txt", "", attrs, IOOption{})
 	core.TestErr(t, err, "Write failed: %v")
 	core.Assert(t, file.Name == "attrs.txt", "Expected file name to be 'attrs.txt'")
 	core.Assert(t, bytes.Equal(file.Attrs, attrs), "Expected file attrs data to match")
@@ -184,7 +184,7 @@ func TestWriteAttrs(t *testing.T) {
 	core.Assert(t, files[0].Name == "attrs.txt", "Expected file name to be 'attrs.txt'")
 	core.Assert(t, bytes.Equal(files[0].Attrs, attrs), "Expected file attrs data to match")
 
-	err = s.Delete("attrs.txt", 0)
+	err = s.Delete("attrs.txt", IOOption{})
 	core.TestErr(t, err, "Delete failed: %v")
 
 	// Verify the file is deleted
@@ -207,7 +207,7 @@ func TestWriteNestedPath(t *testing.T) {
 	err = os.WriteFile(tmpFile, []byte("Nested content"), 0644)
 	core.TestErr(t, err, "WriteFile failed: %v")
 
-	file, err := v.Write("level1/level2/nested.txt", tmpFile, nil, 0, nil)
+	file, err := v.Write("level1/level2/nested.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write failed: %v")
 
 	_, err = v.WaitFiles(context.Background(), file.Id)
@@ -257,7 +257,7 @@ func TestWriteWithSyncRelay(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Alice grants Bob access
-	err = va.SyncAccess(0, AccessChange{
+	err = va.SyncAccess(IOOption{}, AccessChange{
 		UserId: bob,
 		Access: Read,
 	})
@@ -268,7 +268,7 @@ func TestWriteWithSyncRelay(t *testing.T) {
 	err = os.WriteFile(tmpFile, []byte("Testing sync relay"), 0644)
 	core.TestErr(t, err, "Alice: WriteFile failed: %v")
 
-	_, err = va.Write("relay/test.txt", tmpFile, nil, 0, nil)
+	_, err = va.Write("relay/test.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Alice: Write failed: %v")
 
 	time.Sleep(time.Second)
@@ -282,7 +282,7 @@ func TestWriteWithSyncRelay(t *testing.T) {
 
 	// Bob reads the file
 	readFile := t.TempDir() + "/relay-test-read.txt"
-	_, err = vb.Read("relay/test.txt", readFile, 0, nil)
+	_, err = vb.Read("relay/test.txt", readFile, IOOption{}, nil)
 	core.TestErr(t, err, "Bob: Read failed: %v")
 
 	content, err := os.ReadFile(readFile)

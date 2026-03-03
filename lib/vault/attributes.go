@@ -22,12 +22,12 @@ func (v *Vault) SetAttribute(options IOOption, name, value string) error {
 	}
 
 	switch {
-	case options&AsyncOperation != 0:
-		go v.syncBlockChain()
-	case options&ScheduledOperation != 0:
+	case options.Async:
+		go v.syncBlockChain(false)
+	case options.Scheduled:
 		// Do nothing, sync will be done later
 	default:
-		err = v.syncBlockChain()
+		err = v.syncBlockChain(false)
 		if err != nil {
 			return core.Error(core.GenericError, "cannot synchronize blockchain for attribute change", err)
 		}

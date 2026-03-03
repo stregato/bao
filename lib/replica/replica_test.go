@@ -29,7 +29,7 @@ func TestExec(t *testing.T) {
 	v, err := vault.Create(aliceSecret, s, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = v.SyncAccess(0,
+	err = v.SyncAccess(vault.IOOption{},
 		vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
 	)
 	core.TestErr(t, err, "cannot set access: %v")
@@ -171,7 +171,7 @@ func TestExecAliceBobTogether(t *testing.T) {
 	core.TestErr(t, err, "Create failed: %v")
 
 	// Grant Bob read-write access
-	err = vAlice.SyncAccess(0,
+	err = vAlice.SyncAccess(vault.IOOption{},
 		vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
 	)
 	core.TestErr(t, err, "cannot set access: %v")
@@ -319,7 +319,7 @@ func TestExecWithSyncRelay(t *testing.T) {
 	core.TestErr(t, err, "Create failed: %v")
 
 	// Grant Bob read-write access
-	err = v.SyncAccess(0,
+	err = v.SyncAccess(vault.IOOption{},
 		vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
 	)
 	core.TestErr(t, err, "cannot set access: %v")

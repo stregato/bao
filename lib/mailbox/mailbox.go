@@ -27,7 +27,7 @@ func Send(s *vault.Vault, dest string, message Message) error {
 	for idx, attachment := range message.Attachments {
 		go func(idx int, attachment string) {
 			name := path.Join(dest, fmt.Sprintf("%s/%40x.attachment", id, idx))
-			_, err := s.Write(name, attachment, nil, 0, nil)
+			_, err := s.Write(name, attachment, nil, vault.IOOption{})
 			res <- err
 			message.Attachments[idx] = filepath.Base(attachment)
 		}(idx, attachment)
@@ -42,7 +42,7 @@ func Send(s *vault.Vault, dest string, message Message) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.Write(path.Join(dest, id), "", attrs, 0, nil)
+	_, err = s.Write(path.Join(dest, id), "", attrs, vault.IOOption{})
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func Receive(s *vault.Vault, dest string, since time.Time, fromLocalId vault.Fil
 
 func Download(s *vault.Vault, dest string, m Message, attachment int, localDest string) error {
 	name := path.Join(dest, fmt.Sprintf("%s/%40x.attachment", m.FileInfo.Name, attachment))
-	_, err := s.Read(path.Join(dest, name), localDest, 0, nil)
+	_, err := s.Read(path.Join(dest, name), localDest, vault.IOOption{}, nil)
 	if err != nil {
 		return err
 	}

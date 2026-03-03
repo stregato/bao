@@ -82,6 +82,9 @@ func (v *Vault) UpdateFileFlags(id FileId, flags Flags) error {
 func (v *Vault) Read(name string, dest string, options IOOption, progress chan int64) (File, error) {
 	core.Start("reading file %s to %s", name, dest)
 	now := time.Now()
+	if progress == nil {
+		progress = options.Progress
+	}
 	file, found, err := v.queryFileByName(name)
 	if err != nil {
 		return File{}, core.Error(core.DbError, "cannot query file %s", name, err)
@@ -102,7 +105,7 @@ func (v *Vault) Read(name string, dest string, options IOOption, progress chan i
 	}
 
 	switch {
-	case options&AsyncOperation != 0: // Asynchronous operation, set the file flags to PendingRead and schedule the read operation
+	case options.Async: // Asynchronous operation, set the file flags to PendingRead and schedule the read operation
 		err = v.UpdateFileFlags(file.Id, file.Flags)
 		if err != nil {
 			return File{}, core.Error(core.DbError, "cannot set flags for file %s", name, err)
@@ -110,7 +113,7 @@ func (v *Vault) Read(name string, dest string, options IOOption, progress chan i
 		v.scheduleIo(file.Id) // Schedule the I/O operation
 		go v.readFile(file, progress)
 		core.Info("file %s will be read asynchronously", name)
-	case options&ScheduledOperation != 0: // Scheduled operation, set the file flags to PendingRead
+	case options.Scheduled: // Scheduled operation, set the file flags to PendingRead
 		err = v.UpdateFileFlags(file.Id, file.Flags)
 		if err != nil {
 			return File{}, core.Error(core.DbError, "cannot set flags for file %s", name, err)

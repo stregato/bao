@@ -33,6 +33,9 @@ public class Config {
     /** How often to sync the blockchain (default: 600000ms - 10 minutes) */
     private long blockChainSyncPeriod;
 
+    /** Overlap window used when listing blockchain files (default: 3600000ms - 1 hour) */
+    private long blockSyncOverlap;
+
     /** Maximum number of concurrent I/O operations (default: 10) */
     private long ioThrottle;
 
@@ -49,6 +52,7 @@ public class Config {
         this.filesSyncPeriod = 0;
         this.cleanupPeriod = 0;
         this.blockChainSyncPeriod = 0;
+        this.blockSyncOverlap = 0;
         this.ioThrottle = 0;
     }
 
@@ -62,6 +66,7 @@ public class Config {
     public long getFilesSyncPeriod() { return filesSyncPeriod; }
     public long getCleanupPeriod() { return cleanupPeriod; }
     public long getBlockChainSyncPeriod() { return blockChainSyncPeriod; }
+    public long getBlockSyncOverlap() { return blockSyncOverlap; }
     public long getIoThrottle() { return ioThrottle; }
 
     // Setters
@@ -110,6 +115,11 @@ public class Config {
         return this;
     }
 
+    public Config setBlockSyncOverlap(long blockSyncOverlap) {
+        this.blockSyncOverlap = blockSyncOverlap;
+        return this;
+    }
+
     public Config setIoThrottle(long ioThrottle) {
         this.ioThrottle = ioThrottle;
         return this;
@@ -131,6 +141,7 @@ public class Config {
         if (filesSyncPeriod > 0) map.put("filesSyncPeriod", filesSyncPeriod);
         if (cleanupPeriod > 0) map.put("cleanupPeriod", cleanupPeriod);
         if (blockChainSyncPeriod > 0) map.put("blockChainSyncPeriod", blockChainSyncPeriod);
+        if (blockSyncOverlap > 0) map.put("blockSyncOverlap", blockSyncOverlap);
         if (ioThrottle > 0) map.put("ioThrottle", ioThrottle);
         return map;
     }
@@ -147,6 +158,7 @@ public class Config {
                 ", filesSyncPeriod=" + filesSyncPeriod +
                 ", cleanupPeriod=" + cleanupPeriod +
                 ", blockChainSyncPeriod=" + blockChainSyncPeriod +
+                ", blockSyncOverlap=" + blockSyncOverlap +
                 ", ioThrottle=" + ioThrottle +
                 '}';
     }

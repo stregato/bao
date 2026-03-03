@@ -2,6 +2,7 @@ package vault
 
 import (
 	"database/sql"
+	"os"
 	"path"
 	"strconv"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/stregato/bao/lib/store"
 )
 
+const ecBodyOverheadBytes = 129
+
 // Sync synchronizes the filesystem for the specified groups.
 // If no groups are specified, it returns an error.
 // It returns a list of new files that were added during the synchronization.
@@ -24,7 +27,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	now := time.Now()
 
 	baseDir := v.dataRoot()
-	hasChanged, err := v.hasChanged(baseDir)
+	hasChanged, err := v.hasChanged(baseDir, false)
 	if err != nil {
 		return nil, core.Error(core.GenericError, "cannot determine if vault has changed", err)
 	}
@@ -53,7 +56,6 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	}
 
 	var errX error
-	skippedNotForMe := 0
 	for _, segment := range segments {
 		storeDir := path.Join(baseDir, segment)
 		ls, err2 := v.store.ReadDir(path.Join(storeDir, "h"), store.Filter{})
@@ -78,10 +80,11 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 
 		type syncResult struct {
 			storeName string
-			
-			file      File
-			synced    bool
-			err       error
+
+			file     File
+			synced   bool
+			deferred bool
+			err      error
 		}
 		parallelism := min(16, len(ls)) // Limit parallelism to the number of files
 		in := make(chan string, parallelism)
@@ -97,8 +100,8 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 					return // channel closed
 				}
 
-				file, synced, err := v.syncronizeFile(storeDir, name)
-				out <- syncResult{storeName: name, file: file, synced: synced, err: err}
+				file, synced, deferred, err := v.syncronizeFile(storeDir, name)
+				out <- syncResult{storeName: name, file: file, synced: synced, deferred: deferred, err: err}
 			}()
 		}
 		go func() {
@@ -118,8 +121,7 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 				core.Info("error synchronizing file in batch %s: %v", segment, res.err)
 				continue
 			}
-			if !res.synced {
-				skippedNotForMe++
+			if !res.synced || res.deferred {
 				continue
 			}
 			newFiles = append(newFiles, res.file)
@@ -128,8 +130,8 @@ func (v *Vault) Sync() (newFiles []File, err error) {
 	if errX != nil {
 		return nil, core.Error(core.GenericError, "errors occurred during synchronization", errX)
 	}
-	if skippedNotForMe > 0 {
-		core.Info("vault sync skipped %d files addressed to other users", skippedNotForMe)
+	if err := v.markChangedAsSeen(baseDir); err != nil {
+		core.Info("cannot mark data guard file as seen for %s: %v", baseDir, err)
 	}
 
 	core.End("synchronized vault %s in %s, %d new files", v.ID, time.Since(now), len(newFiles))
@@ -231,44 +233,66 @@ func (v *Vault) getKnownFilesNames(storeDir string) (map[string]bool, error) {
 
 // syncronizeFile returns:
 //   - file + synced=true when a new file head is imported
-//   - synced=false with nil error when the file is valid but not addressed to this user
+//   - synced=false, deferred=true when import is temporarily postponed (e.g. body not ready)
+//   - synced=false, deferred=false with nil error when the file is valid but not addressed to this user
 //   - error for real failures
-func (v *Vault) syncronizeFile(storeDir, storeName string) (file File, synced bool, err error) {
+func (v *Vault) syncronizeFile(storeDir, storeName string) (file File, synced bool, deferred bool, err error) {
 	core.Start("storeDir %s, storeName %s", storeDir, storeName)
 
 	n := path.Join(storeDir, "h", storeName)
 	head, err := store.ReadFile(v.store, n)
 	if err != nil {
-		return File{}, false, core.Error(core.FileError, "cannot read sealed file %s", n, err)
+		return File{}, false, false, core.Error(core.FileError, "cannot read sealed file %s", n, err)
 	}
 
 	file, notForMe, retryAfterBlockchain, err := decodeHead(head, v.UserSecret, v.getKey, v.getUserByShortId)
 	if err != nil {
-		return File{}, false, core.Error(core.FileError, "cannot decode file head %s", n, err)
+		return File{}, false, false, core.Error(core.FileError, "cannot decode file head %s", n, err)
 	}
 	if retryAfterBlockchain {
 		// Access/user mapping can be temporarily stale; import blockchain and retry once.
-		if err := v.syncBlockChain(); err != nil {
-			return File{}, false, core.Error(core.GenericError, "cannot sync blockchain before decoding %s", n, err)
+		if err := v.syncBlockChain(true); err != nil {
+			return File{}, false, false, core.Error(core.GenericError, "cannot sync blockchain before decoding %s", n, err)
 		}
 		file, notForMe, retryAfterBlockchain, err = decodeHead(head, v.UserSecret, v.getKey, v.getUserByShortId)
 		if err != nil {
-			return File{}, false, core.Error(core.FileError, "cannot decode file head %s after blockchain sync", n, err)
+			return File{}, false, false, core.Error(core.FileError, "cannot decode file head %s after blockchain sync", n, err)
 		}
 		if retryAfterBlockchain {
 			core.Info("file %s still has unknown author after blockchain sync, deferring", n)
-			return File{}, false, nil
+			return file, false, true, nil
 		}
 	}
 	if notForMe {
 		v.markIgnoredStoreName(storeDir, storeName)
 		core.End("file %s is addressed to another user, skipping", n)
-		return File{}, false, nil
+		return file, false, false, nil
+	}
+
+	bodyReadyCheckThreshold := core.DefaultIfZero(v.Config.BodyReadyCheckThreshold, 0)
+	if file.Size > bodyReadyCheckThreshold {
+		expectedBodySize := file.Size
+		if file.Flags&EcEncryption != 0 {
+			expectedBodySize += ecBodyOverheadBytes
+		}
+		bodyPath := path.Join(storeDir, "b", storeName)
+		bodyInfo, statErr := v.store.Stat(bodyPath)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				core.Info("body %s not available yet, deferring head import", bodyPath)
+				return file, false, true, nil
+			}
+			return File{}, false, false, core.Error(core.FileError, "cannot stat body file %s", bodyPath, statErr)
+		}
+		if bodyInfo.Size() != expectedBodySize {
+			core.Info("body %s size mismatch (got %d expected %d), deferring head import", bodyPath, bodyInfo.Size(), expectedBodySize)
+			return file, false, true, nil
+		}
 	}
 
 	id, err := strconv.ParseUint(storeName, 36, 64)
 	if err != nil {
-		return File{}, false, core.Error(core.FileError, "cannot parse file ID from store name %s", storeName, err)
+		return File{}, false, false, core.Error(core.FileError, "cannot parse file ID from store name %s", storeName, err)
 	}
 	file.Id = FileId(id)
 	file.AllocatedSize = int64(len(head)) + file.Size
@@ -276,14 +300,14 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (file File, synced bo
 	file.StoreName = storeName
 	file, err = v.writeFileHeadToDB(file)
 	if err != nil {
-		return File{}, false, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
+		return File{}, false, false, core.Error(core.DbError, "cannot write file head to DB for %s", n, err)
 	}
 	v.signalUpdate()
 	v.unmarkIgnoredStoreName(storeDir, storeName)
 
 	v.allocatedSize += file.AllocatedSize
 	core.End("file %s, size %d, allocated %d, modTime %s", file.Name, file.Size, file.AllocatedSize, file.ModTime)
-	return file, true, nil
+	return file, true, false, nil
 }
 
 func (v *Vault) writeFileHeadToDB(file File) (File, error) {

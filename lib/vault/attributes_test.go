@@ -28,9 +28,9 @@ func TestAttributes(t *testing.T) {
 	core.TestErr(t, err, "cannot create vault")
 	defer s.Close()
 
-	err = s.SetAttribute(0, "attr1", "value1")
+	err = s.SetAttribute(IOOption{}, "attr1", "value1")
 	core.TestErr(t, err, "cannot set attribute attr1")
-	err = s.SetAttribute(0, "attr2", "value2")
+	err = s.SetAttribute(IOOption{}, "attr2", "value2")
 	core.TestErr(t, err, "cannot set attribute attr2")
 
 	val, err := s.GetAttribute("attr1", alice.PublicIDMust())

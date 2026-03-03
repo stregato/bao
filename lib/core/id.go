@@ -18,6 +18,14 @@ func SnowID() uint64 {
 	return snowflake.ID()
 }
 
+func SnowIDFromTime(t time.Time) uint64 {
+	ms := uint64(t.UnixMilli())
+	if ms > MaxTimestamp {
+		ms = MaxTimestamp
+	}
+	return ms << 22
+}
+
 func SnowIDString() string {
 	return strconv.FormatUint(SnowID(), 16)
 }

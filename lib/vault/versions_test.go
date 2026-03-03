@@ -28,7 +28,7 @@ func TestVersions(t *testing.T) {
 	core.TestErr(t, err, "WriteFile failed")
 
 	// Write the first version
-	file1, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
+	file1, err := v.Write("docs/versioned.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write version 1 failed")
 	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
@@ -43,7 +43,7 @@ func TestVersions(t *testing.T) {
 	// Write the second version
 	err = os.WriteFile(tmpFile, []byte("Version 2 - updated"), 0644)
 	core.TestErr(t, err, "WriteFile for version 2 failed")
-	file2, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
+	file2, err := v.Write("docs/versioned.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write version 2 failed")
 	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
@@ -54,7 +54,7 @@ func TestVersions(t *testing.T) {
 	// Write the third version
 	err = os.WriteFile(tmpFile, []byte("Version 3 - final"), 0644)
 	core.TestErr(t, err, "WriteFile for version 3 failed")
-	file3, err := v.Write("docs/versioned.txt", tmpFile, nil, 0, nil)
+	file3, err := v.Write("docs/versioned.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write version 3 failed")
 	_, err = v.WaitFiles(context.Background(), file3.Id)
 	core.TestErr(t, err, "WaitFiles failed")
@@ -101,7 +101,7 @@ func TestVersions(t *testing.T) {
 	// Test that the returned names can be used directly with Read
 	tmpReadFile := t.TempDir() + "/read_version.txt"
 	t.Logf("Reading version: %s (offset 0=oldest via ASC query)", versions[0].Name)
-	_, err = v.Read(versions[0].Name, tmpReadFile, 0, nil) // Read oldest version (index 0, offset 0)
+	_, err = v.Read(versions[0].Name, tmpReadFile, IOOption{}, nil) // Read oldest version (index 0, offset 0)
 	core.TestErr(t, err, "WaitFiles after read failed")
 
 	content, err := os.ReadFile(tmpReadFile)
@@ -148,7 +148,7 @@ func TestVersionsAfterDelete(t *testing.T) {
 	core.TestErr(t, err, "WriteFile failed")
 
 	// Write the file
-	file1, err := v.Write("docs/deleted.txt", tmpFile, nil, 0, nil)
+	file1, err := v.Write("docs/deleted.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write failed")
 	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
@@ -159,13 +159,13 @@ func TestVersionsAfterDelete(t *testing.T) {
 	// Update the file
 	err = os.WriteFile(tmpFile, []byte("Updated content"), 0644)
 	core.TestErr(t, err, "WriteFile for update failed")
-	file2, err := v.Write("docs/deleted.txt", tmpFile, nil, 0, nil)
+	file2, err := v.Write("docs/deleted.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write update failed")
 	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Delete the file
-	err = v.Delete("docs/deleted.txt", 0)
+	err = v.Delete("docs/deleted.txt", IOOption{})
 	core.TestErr(t, err, "Delete failed")
 
 	// Sync to update the files table
@@ -203,13 +203,13 @@ func TestVersionsWithDifferentPaths(t *testing.T) {
 	core.TestErr(t, err, "WriteFile failed")
 
 	// Write to root
-	file1, err := v.Write("test.txt", tmpFile, nil, 0, nil)
+	file1, err := v.Write("test.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write to root failed")
 	_, err = v.WaitFiles(context.Background(), file1.Id)
 	core.TestErr(t, err, "WaitFiles failed")
 
 	// Write to subdirectory
-	file2, err := v.Write("docs/test.txt", tmpFile, nil, 0, nil)
+	file2, err := v.Write("docs/test.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write to docs/ failed")
 	_, err = v.WaitFiles(context.Background(), file2.Id)
 	core.TestErr(t, err, "WaitFiles failed")
@@ -217,7 +217,7 @@ func TestVersionsWithDifferentPaths(t *testing.T) {
 	// Write another version to subdirectory
 	err = os.WriteFile(tmpFile, []byte("Content 2 updated"), 0644)
 	core.TestErr(t, err, "WriteFile for update failed")
-	file3, err := v.Write("docs/test.txt", tmpFile, nil, 0, nil)
+	file3, err := v.Write("docs/test.txt", tmpFile, nil, IOOption{})
 	core.TestErr(t, err, "Write update to docs/ failed")
 	_, err = v.WaitFiles(context.Background(), file3.Id)
 	core.TestErr(t, err, "WaitFiles failed")

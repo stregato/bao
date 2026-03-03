@@ -17,16 +17,18 @@ const (
 )
 
 type Config struct {
-	SyncRelay            string        `json:"syncRelay"`            // Watch service URL for changes notifications
-	Retention            time.Duration `json:"retention"`            // How long data is kept
-	MaxStorage           int64         `json:"maxStorage"`           // Maximum allowed store.(bytes)
-	SegmentInterval      time.Duration `json:"segmentInterval"`      // Time duration of each batch segment
-	SyncCooldown         time.Duration `json:"syncCooldown"`         // Minimum time between two sync operations (default 5 seconds)
-	WaitTimeout          time.Duration `json:"waitTimeout"`          // Maximum time to wait for I/O operations to complete (default 10 minutes)
-	FilesSyncPeriod      time.Duration `json:"filesSyncPeriod"`      // How often to sync files (default 10 minutes)
-	CleanupPeriod        time.Duration `json:"cleanupPeriod"`        // How often to run housekeeping (default 1 hour)
-	BlockChainSyncPeriod time.Duration `json:"blockChainSyncPeriod"` // How often to sync the blockchain (default 10 minutes)
-	IoThrottle           int64         `json:"ioThrottle"`           // Maximum number of concurrent I/O operations. Default is 10.
+	SyncRelay               string        `json:"syncRelay"`               // Watch service URL for changes notifications
+	Retention               time.Duration `json:"retention"`               // How long data is kept
+	MaxStorage              int64         `json:"maxStorage"`              // Maximum allowed store.(bytes)
+	SegmentInterval         time.Duration `json:"segmentInterval"`         // Time duration of each batch segment
+	SyncCooldown            time.Duration `json:"syncCooldown"`            // Minimum time between two sync operations (default 5 seconds)
+	WaitTimeout             time.Duration `json:"waitTimeout"`             // Maximum time to wait for I/O operations to complete (default 10 minutes)
+	FilesSyncPeriod         time.Duration `json:"filesSyncPeriod"`         // How often to sync files (default 10 minutes)
+	CleanupPeriod           time.Duration `json:"cleanupPeriod"`           // How often to run housekeeping (default 1 hour)
+	BlockChainSyncPeriod    time.Duration `json:"blockChainSyncPeriod"`    // How often to sync the blockchain (default 10 minutes)
+	BlockSyncOverlap        time.Duration `json:"blockSyncOverlap"`        // Overlap window used when listing blockchain files to tolerate delayed visibility (default 1 hour)
+	BodyReadyCheckThreshold int64         `json:"bodyReadyCheckThreshold"` // Check body readiness only for files strictly larger than this threshold in bytes. 0 means all non-empty files.
+	IoThrottle              int64         `json:"ioThrottle"`              // Maximum number of concurrent I/O operations. Default is 10.
 }
 
 type Vault struct {
@@ -60,6 +62,9 @@ type Vault struct {
 
 	ignoredStoreNamesMu sync.RWMutex
 	ignoredStoreNames   map[string]struct{} // Transient cache of files intentionally ignored (e.g. not addressed to this user)
+
+	relayRetryMu sync.Mutex
+	relayRetry   map[string]struct{} // Deduplicates delayed relay retries for deferred files.
 }
 
 var openedStashes []*Vault
@@ -71,12 +76,14 @@ const (
 	DefaultSegmentInterval = 24 * time.Hour      // 1 day
 )
 
-type IOOption int
+type IOOption struct {
+	Async        bool              `json:"async,omitempty"`        // If true, the operation is performed asynchronously, and the caller does not wait for its completion. The caller can use the returned File's ID to track the operation's progress and completion status.
+	Scheduled    bool              `json:"scheduled,omitempty"`    // If true, the operation is scheduled to be performed later, and the caller does not wait for its completion. The parameter `progress` is ignored in this case.
+	NoEncryption bool              `json:"noEncryption,omitempty"` // If true, the file is stored without encryption. This option is only applicable for write operations and is ignored for other operations.
+	EcRecipient  security.PublicID `json:"ecRecipient,omitempty"`  // If set, the file is encrypted using EC encryption with the specified recipient's public ID. This option is only applicable for write operations and is ignored for other operations.
 
-const (
-	AsyncOperation     IOOption = 1 << iota // Asynchronous operation, do not wait for completion
-	ScheduledOperation                      // Scheduled indicates that the operation should be performed at a later time
-)
+	Progress chan int64 `json:"-"`
+}
 
 func (v *Vault) scheduleIo(id FileId) *chan struct{} {
 	v.ioMu.Lock()

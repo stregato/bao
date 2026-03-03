@@ -81,7 +81,7 @@ func (v *Vault) retentionCleanup() {
 func (v *Vault) housekeeping() error {
 	core.Start("starting housekeeping")
 	if time.Since(v.lastBlockChainSyncAt) > core.DefaultIfZero(v.Config.BlockChainSyncPeriod, time.Hour) {
-		v.syncBlockChain()
+		v.syncBlockChain(false)
 		v.lastBlockChainSyncAt = time.Now()
 	}
 	if time.Since(v.lastWaitFilesAt) > core.DefaultIfZero(v.Config.FilesSyncPeriod, 10*time.Minute) {

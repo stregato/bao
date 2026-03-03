@@ -19,10 +19,6 @@ typedef Accesses = Map<PublicID, Access>;
 
 typedef OpenOptions = int;
 
-typedef RWOptions = int;
-const int asyncOperation = 1; // Perform the operation asynchronously
-const int scheduledOperation = 2; // Schedule the operation for later
-
 class AccessChange {
   PublicID userId = PublicID();
   Access access = 0;
@@ -79,7 +75,7 @@ class Vault {
       {Config? config}) async {
     var configMap = config?.toJson() ?? {};
     var res = await bindings.acall(
-        'bao_vault_create', ["", identity, store.hnd, db.hnd, configMap]);
+        'bao_vault_create', [identity, store.hnd, db.hnd, configMap]);
     return fromResult(res);
   }
 
@@ -88,7 +84,7 @@ class Vault {
   static Future<Vault> open(
       PrivateID identity, PublicID author, Store store, DB db) async {
     var res = await bindings.acall(
-        'bao_vault_open', ["", identity, author, store.hnd, db.hnd]);
+        'bao_vault_open', [identity, author, store.hnd, db.hnd]);
     return fromResult(res);
   }
 
@@ -105,9 +101,12 @@ class Vault {
 
   /// Applies a batch of access changes and optionally flushes them immediately.
   Future<void> syncAccess(
-      [List<AccessChange> changes = const [], int options = 0]) async {
+      [List<AccessChange> changes = const [],
+      bool async = false,
+      bool scheduled = false]) async {
+    final io = _ioOptionJson(async: async, scheduled: scheduled);
     var res =
-        await bindings.acall('bao_vault_syncAccess', [hnd, options, changes]);
+        await bindings.acall('bao_vault_syncAccess', [hnd, io, changes]);
     res.throwIfError();
   }
 
@@ -146,9 +145,10 @@ class Vault {
   /// The [name] parameter is the name of the attribute.
   /// The [value] parameter is the value of the attribute.
   Future<void> setAttribute(String name, String value,
-      [int options = 0]) async {
+      {bool async = false, bool scheduled = false}) async {
+    final io = _ioOptionJson(async: async, scheduled: scheduled);
     var res = await bindings
-        .acall('bao_vault_setAttribute', [hnd, options, name, value]);
+        .acall('bao_vault_setAttribute', [hnd, io, name, value]);
     res.throwIfError();
   }
 
@@ -188,29 +188,44 @@ class Vault {
   }
 
   /// Reads data from the vault with the given name and destination path.
-  /// The options parameter can be used to specify additional options for the read operation.
+  /// Use [async] and [scheduled] to control execution mode.
   /// Returns an error if the read operation fails.
-  Future<FileInfo> read(String name, String dst, {int options = 0}) async {
-    var res = await bindings.acall(
-        'bao_vault_read', [hnd, name, dst, options]);
+  Future<FileInfo> read(String name, String dst,
+      {bool async = false,
+      bool scheduled = false,
+      PublicID? ecRecipient}) async {
+    final io = _ioOptionJson(
+        async: async, scheduled: scheduled, ecRecipient: ecRecipient);
+    var res = await bindings.acall('bao_vault_read', [hnd, name, dst, io]);
     return FileInfo.fromMap(res.map);
   }
 
   /// Writes data to the vault with the given destination, group, and source path.
   /// The src parameter is the source path of the file to be written. If src is empty, it will write only the header without any content.
-  /// The options parameter can be used to specify additional options for the write operation.
+  /// Use [async], [scheduled], [noEncryption], and [ecRecipient] to control write behavior.
   Future<FileInfo> write(String dest,
-      {Uint8List? attrs, String src = "", int options = 0}) async {
+      {Uint8List? attrs,
+      String src = "",
+      bool async = false,
+      bool scheduled = false,
+      bool noEncryption = false,
+      PublicID? ecRecipient}) async {
     attrs ??= Uint8List(0);
+    final io = _ioOptionJson(
+        async: async,
+        scheduled: scheduled,
+        noEncryption: noEncryption,
+        ecRecipient: ecRecipient);
     var res = await bindings
-        .acall('bao_vault_write', [hnd, dest, src, attrs, options]);
+        .acall('bao_vault_write', [hnd, dest, src, attrs, io]);
     return FileInfo.fromMap(res.map);
   }
 
   /// Deletes the file with the given name from the vault.
   /// Returns an error if the deletion operation fails.
-  Future<void> delete(String name, {int options = 0}) async {
-    var res = await bindings.acall('bao_vault_delete', [hnd, name, options]);
+  Future<void> delete(String name, {bool async = false, bool scheduled = false}) async {
+    final io = _ioOptionJson(async: async, scheduled: scheduled);
+    var res = await bindings.acall('bao_vault_delete', [hnd, name, io]);
     res.throwIfError();
   }
 
@@ -240,5 +255,26 @@ class Vault {
   /// Safe to call even if no wait is in progress.
   Future<void> interruptWait() async {
     await bindings.acall('bao_vault_interruptWait', [hnd]);
+  }
+
+  Map<String, dynamic> _ioOptionJson(
+      {bool async = false,
+      bool scheduled = false,
+      bool noEncryption = false,
+      PublicID? ecRecipient}) {
+    final m = <String, dynamic>{};
+    if (async) {
+      m['async'] = true;
+    }
+    if (scheduled) {
+      m['scheduled'] = true;
+    }
+    if (noEncryption) {
+      m['noEncryption'] = true;
+    }
+    if (ecRecipient != null && ecRecipient.toString().isNotEmpty) {
+      m['ecRecipient'] = ecRecipient.toString();
+    }
+    return m;
   }
 }

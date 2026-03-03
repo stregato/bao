@@ -49,19 +49,20 @@ func Create(userSecret security.PrivateID, store store.Store, db *sqlx.DB, confi
 
 	id := fmt.Sprintf("%s", store.ID())
 	v := Vault{
-		ID:            id,
-		UserSecret:    userSecret,
-		UserID:        userID,
-		UserIDHash:    userIDHash,
-		Author:        userID,
-		DB:            db,
-		Config:        config,
-		store:         store,
-		newFiles:      sync.NewCond(&sync.Mutex{}),
-		lastCleanupAt: time.Now(),
-		ioThrottleCh:  make(chan struct{}, ioThrottle),
-		ioScheduleMap: make(map[FileId]chan struct{}),
+		ID:                id,
+		UserSecret:        userSecret,
+		UserID:            userID,
+		UserIDHash:        userIDHash,
+		Author:            userID,
+		DB:                db,
+		Config:            config,
+		store:             store,
+		newFiles:          sync.NewCond(&sync.Mutex{}),
+		lastCleanupAt:     time.Now(),
+		ioThrottleCh:      make(chan struct{}, ioThrottle),
+		ioScheduleMap:     make(map[FileId]chan struct{}),
 		ignoredStoreNames: make(map[string]struct{}),
+		relayRetry:        make(map[string]struct{}),
 	}
 
 	bc, err := marshalChange(&config)
@@ -72,7 +73,7 @@ func Create(userSecret security.PrivateID, store store.Store, db *sqlx.DB, confi
 	if err != nil {
 		return nil, core.Error(core.ConfigError, "cannot stage config change for vault %s", id, err)
 	}
-	err = v.SyncAccess(0, AccessChange{userID, ReadWriteAdmin})
+	err = v.SyncAccess(IOOption{}, AccessChange{userID, ReadWriteAdmin})
 	if err != nil {
 		return nil, core.Error(core.DbError, "cannot set access for vault %s", id, err)
 	}

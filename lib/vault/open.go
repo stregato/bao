@@ -61,6 +61,7 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 		ioThrottleCh:  make(chan struct{}, ioThrottle),
 		ioScheduleMap: make(map[FileId]chan struct{}),
 		ignoredStoreNames: make(map[string]struct{}),
+		relayRetry:       make(map[string]struct{}),
 	}
 	allocatedSize, err := v.calculateAllocatedSize()
 	if err != nil {
@@ -73,7 +74,8 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 		return nil, core.Error(core.DbError, "cannot get access for user %s in vault %s", v.UserID, id, err)
 	}
 	if access == 0 {
-		err := v.syncBlockChain()
+		// Force a full blockchain import on first open with no local access.
+		err := v.syncBlockChain(true)
 		if err != nil {
 			return nil, core.Error(core.GenericError, "cannot perform initial user synchronization for vault %s", id, err)
 		}
@@ -82,7 +84,7 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 			return nil, core.Error(core.DbError, "Cannot get access for user %s in vault %s", v.UserID, id, err)
 		}
 	} else {
-		defer v.syncBlockChain()
+		defer v.syncBlockChain(false)
 	}
 	v.startSyncRelay()
 	v.startHousekeeping()

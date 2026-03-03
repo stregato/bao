@@ -138,7 +138,7 @@ func (ds *Replica) addCurrentTransactionToAll(dir string, dests []security.Publi
 	name := strconv.FormatUint(core.SnowID(), 16) // base logical tx name
 	var maxWrittenID vault.FileId
 	if len(dests) == 0 {
-		file, err := ds.vault.Write(path.Join(dir, name), "", attrs, 0, nil)
+		file, err := ds.vault.Write(path.Join(dir, name), "", attrs, vault.IOOption{})
 		if err != nil {
 			return nil, core.Error(core.DbError, "cannot write transaction %d to %s", t.Id, dir, err)
 		}
@@ -146,7 +146,7 @@ func (ds *Replica) addCurrentTransactionToAll(dir string, dests []security.Publi
 	} else {
 		for _, dest := range dests {
 			txName := fmt.Sprintf("%s-%x,ec=%s", name, dest.Hash(), dest)
-			file, err := ds.vault.Write(path.Join(dir, txName), "", attrs, 0, nil)
+			file, err := ds.vault.Write(path.Join(dir, txName), "", attrs, vault.IOOption{})
 			if err != nil {
 				return nil, core.Error(core.DbError, "cannot write transaction %d to %s for recipient %s", t.Id, dir, dest, err)
 			}

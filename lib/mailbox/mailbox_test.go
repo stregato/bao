@@ -26,7 +26,7 @@ func TestMailbox(t *testing.T) {
 	s, err := vault.Create(alice, store, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = s.SyncAccess(0, vault.AccessChange{Access: vault.ReadWrite, UserId: alice.PublicIDMust()})
+	err = s.SyncAccess(vault.IOOption{}, vault.AccessChange{Access: vault.ReadWrite, UserId: alice.PublicIDMust()})
 	core.TestErr(t, err, "cannot set access: %v")
 
 	err = Send(s, "testDir", Message{
@@ -58,7 +58,7 @@ func TestMailboxPair(t *testing.T) {
 	v, err := vault.Create(aliceSecret, store, db, vault.Config{})
 	core.TestErr(t, err, "Create failed: %v")
 
-	err = v.SyncAccess(0, vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
+	err = v.SyncAccess(vault.IOOption{}, vault.AccessChange{Access: vault.ReadWrite, UserId: bob},
 		vault.AccessChange{Access: vault.ReadWrite, UserId: carl})
 	core.TestErr(t, err, "cannot set access: %v")
 
