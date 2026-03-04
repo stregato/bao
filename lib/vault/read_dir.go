@@ -2,6 +2,7 @@ package vault
 
 import (
 	"path"
+	"strings"
 	"time"
 
 	"github.com/stregato/bao/lib/core"
@@ -31,6 +32,7 @@ func (v *Vault) ReadDir(dir string, since time.Time, afterId FileId, limit int) 
 	}
 
 	var ls []File
+	seenDirs := map[string]struct{}{}
 	dir = path.Clean(dir)
 	modTimeSince := since.Unix()
 	rows, err := v.DB.Query("GET_FILES_IN_DIR", sqlx.Args{"vault": v.ID, "dir": dir,
@@ -52,9 +54,70 @@ func (v *Vault) ReadDir(dir string, since time.Time, afterId FileId, limit int) 
 
 		if file.Flags&Deleted == 0 {
 			ls = append(ls, file)
+			if file.IsDir {
+				seenDirs[file.Name] = struct{}{}
+			}
+		}
+	}
+
+	// Also synthesize directory entries from known file paths so top-level
+	// folders (e.g. "replica") appear even when explicit marker rows are absent.
+	dirRows, err := v.DB.Query("GET_ALL_DIRS", sqlx.Args{"vault": v.ID})
+	if err == nil {
+		defer dirRows.Close()
+		for dirRows.Next() {
+			var knownDir string
+			if err := dirRows.Scan(&knownDir); err != nil {
+				return nil, err
+			}
+			child := immediateChildDir(dir, knownDir)
+			if child == "" {
+				continue
+			}
+			if _, exists := seenDirs[child]; exists {
+				continue
+			}
+			seenDirs[child] = struct{}{}
+			ls = append(ls, File{
+				Name:    child,
+				IsDir:   true,
+				ModTime: time.UnixMilli(0),
+			})
 		}
 	}
 
 	core.End("%d files", len(ls))
 	return ls, nil
+}
+
+func immediateChildDir(parentDir, knownDir string) string {
+	parent := path.Clean(parentDir)
+	d := path.Clean(knownDir)
+	if d == "." || d == "" {
+		return ""
+	}
+	if parent == "." || parent == "" {
+		if strings.HasPrefix(d, "/") {
+			d = strings.TrimPrefix(d, "/")
+		}
+		if d == "" {
+			return ""
+		}
+		if i := strings.IndexByte(d, '/'); i >= 0 {
+			return d[:i]
+		}
+		return d
+	}
+	prefix := parent + "/"
+	if !strings.HasPrefix(d, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(d, prefix)
+	if rest == "" {
+		return ""
+	}
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		return rest[:i]
+	}
+	return rest
 }

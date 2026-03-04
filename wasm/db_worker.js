@@ -6,6 +6,131 @@ let sqlite3, db;
 const stmts = new Map();
 let nextStmtId = 1;
 
+function isByteArrayLike(v) {
+  if (!(Array.isArray(v))) return false;
+  for (let i = 0; i < v.length; i++) {
+    const n = v[i];
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 255) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizeBindValue(v) {
+  if (isByteArrayLike(v)) {
+    return Uint8Array.from(v);
+  }
+  return v;
+}
+
+function normalizeBindArgs(args) {
+  if (Array.isArray(args)) {
+    return args.map(normalizeBindValue);
+  }
+  if (args && typeof args === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(args)) {
+      out[k] = normalizeBindValue(v);
+    }
+    return out;
+  }
+  return args;
+}
+
+function bindIfPresent(stmt, args) {
+  const normalized = normalizeBindArgs(args);
+  if (Array.isArray(args) && args.length > 0) {
+    stmt.bind(normalized);
+    return;
+  }
+  if (normalized && typeof normalized === "object" && !Array.isArray(normalized)) {
+    const keys = Object.keys(normalized);
+    if (keys.length > 0) {
+      // sqlite wasm can reject extra keys that are not real SQL bind params.
+      // Keep removing invalid names and retry to mirror native sqlite behavior.
+      const attempt = { ...normalized };
+      while (true) {
+        try {
+          stmt.bind(attempt);
+          break;
+        } catch (e) {
+          const msg = String(e);
+          const m = msg.match(/Invalid bind\(\) parameter name:\s*([^\s]+)/i);
+          if (!m || !m[1]) {
+            const details = `bind object failed, keys=${JSON.stringify(Object.keys(attempt))}, err=${msg}`;
+            throw new Error(details);
+          }
+          let bad = m[1].trim();
+          // Normalize "id" vs ":id"/"$id"/"@id" forms.
+          const variants = [bad];
+          if (!bad.startsWith(":") && !bad.startsWith("$") && !bad.startsWith("@")) {
+            variants.push(":" + bad, "$" + bad, "@" + bad);
+          } else {
+            const bare = bad.slice(1);
+            variants.push(bare, ":" + bare, "$" + bare, "@" + bare);
+          }
+          let removed = false;
+          for (const k of variants) {
+            if (Object.prototype.hasOwnProperty.call(attempt, k)) {
+              delete attempt[k];
+              removed = true;
+            }
+          }
+          if (!removed) {
+            const details = `bind object failed, keys=${JSON.stringify(Object.keys(attempt))}, err=${msg}`;
+            throw new Error(details);
+          }
+          if (Object.keys(attempt).length === 0) {
+            const details = `bind object resolved to empty map after removing invalid key ${bad}; original keys may not match SQL parameters`;
+            throw new Error(details);
+          }
+        }
+      }
+    }
+  }
+}
+
+function normalizeRow(row, columnCount) {
+  let out = row;
+  if (Array.isArray(out) && out.length === columnCount + 1 && out[0] === "array") {
+    out = out.slice(1);
+  }
+  if (Array.isArray(out)) {
+    for (let i = 0; i < out.length; i++) {
+      // Go syscall/js does not handle JS BigInt reliably across all paths.
+      // Convert to decimal string so Go scanner can parse to int64/uint64.
+      if (typeof out[i] === "bigint") {
+        out[i] = out[i].toString();
+      }
+    }
+  }
+  return out;
+}
+
+function safeChanges() {
+  try {
+    if (db && typeof db.changes === "function") {
+      return Number(db.changes()) || 0;
+    }
+  } catch (_) {}
+  return 0;
+}
+
+function safeLastInsertId() {
+  try {
+    if (db && typeof db.lastInsertRowid === "function") {
+      return Number(db.lastInsertRowid()) || 0;
+    }
+  } catch (_) {}
+  try {
+    if (db && typeof db.selectValue === "function") {
+      return Number(db.selectValue("SELECT last_insert_rowid()")) || 0;
+    }
+  } catch (_) {}
+  return 0;
+}
+
 /** Utilities */
 function ok(m, extra = {}) {
   postMessage({ reqId: m.reqId ?? null, ok: true, ...extra });
@@ -73,13 +198,32 @@ self.onmessage = async (e) => {
     /** ENGINE-LEVEL EXEC (no prepared handle) */
     if (m.op === "exec") {
       needDb();
-      db.exec({ sql: m.sql, bind: m.args || [] });
-      ok(m, {
-        result: {
-          rowsAffected: db.changes(),
-          lastInsertId: db.lastInsertRowid(),
-        },
-      });
+      const s = db.prepare(m.sql);
+      try {
+        s.reset();
+        bindIfPresent(s, m.args);
+        s.step();
+        s.reset();
+        ok(m, {
+          result: {
+            rowsAffected: safeChanges(),
+            lastInsertId: safeLastInsertId(),
+          },
+        });
+      } catch (e) {
+        try { s.reset(); } catch (_) {}
+        const preview = (() => {
+          try {
+            const txt = JSON.stringify(m.args);
+            return txt.length > 400 ? txt.slice(0, 400) + "..." : txt;
+          } catch (_) {
+            return String(m.args);
+          }
+        })();
+        fail(m, `exec failed, sql=${String(m.sql)}, args=${preview}, err=${String(e)}`);
+      } finally {
+        try { s.finalize(); } catch (_) {}
+      }
       return;
     }
 
@@ -88,11 +232,13 @@ self.onmessage = async (e) => {
       needDb();
       const s = db.prepare(m.sql);
       try {
-        s.bind(m.args || []);
+        bindIfPresent(s, m.args);
         const columns = s.getColumnNames?.() || [];
         const declTypes = declTypesOf(s, sqlite3.capi);
         const rows = [];
-        while (s.step()) rows.push(s.get({ rowMode: "array" }));
+        while (s.step()) {
+          rows.push(normalizeRow(s.get([]), columns.length));
+        }
         s.reset();
         ok(m, { columns, declTypes, rows });
       } finally {
@@ -106,11 +252,11 @@ self.onmessage = async (e) => {
       needDb();
       const s = db.prepare(m.sql);
       try {
-        s.bind(m.args || []);
+        bindIfPresent(s, m.args);
         const columns = s.getColumnNames?.() || [];
         const declTypes = declTypesOf(s, sqlite3.capi);
         const hasRow = s.step();
-        const row = hasRow ? s.get({ rowMode: "array" }) : null;
+        const row = hasRow ? normalizeRow(s.get([]), columns.length) : null;
         s.reset();
         ok(m, { columns, declTypes, hasRow, row });
       } finally {
@@ -126,14 +272,14 @@ self.onmessage = async (e) => {
       if (!s) return fail(m, "invalid stmtId");
       try {
         s.reset();
-        s.bind(m.args || []);
+        bindIfPresent(s, m.args);
         // step once for DML; for SELECT user should use queryStmt/queryRowStmt
         s.step();
         s.reset();
         ok(m, {
           result: {
-            rowsAffected: db.changes(),
-            lastInsertId: db.lastInsertRowid(),
+            rowsAffected: safeChanges(),
+            lastInsertId: safeLastInsertId(),
           },
         });
       } catch (e) {
@@ -150,11 +296,13 @@ self.onmessage = async (e) => {
       if (!s) return fail(m, "invalid stmtId");
       try {
         s.reset();
-        s.bind(m.args || []);
+        bindIfPresent(s, m.args);
         const columns = s.getColumnNames?.() || [];
         const declTypes = declTypesOf(s, sqlite3.capi);
         const rows = [];
-        while (s.step()) rows.push(s.get({ rowMode: "array" }));
+        while (s.step()) {
+          rows.push(normalizeRow(s.get([]), columns.length));
+        }
         s.reset();
         ok(m, { columns, declTypes, rows });
       } catch (e) {
@@ -171,11 +319,11 @@ self.onmessage = async (e) => {
       if (!s) return fail(m, "invalid stmtId");
       try {
         s.reset();
-        s.bind(m.args || []);
+        bindIfPresent(s, m.args);
         const columns = s.getColumnNames?.() || [];
         const declTypes = declTypesOf(s, sqlite3.capi);
         const hasRow = s.step();
-        const row = hasRow ? s.get({ rowMode: "array" }) : null;
+        const row = hasRow ? normalizeRow(s.get([]), columns.length) : null;
         s.reset();
         ok(m, { columns, declTypes, hasRow, row });
       } catch (e) {

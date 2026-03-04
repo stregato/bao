@@ -6,65 +6,216 @@
   <title>Bao WASM Demo</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 24px; }
-    h1 { margin-top: 0; }
+    h1 { margin: 0; }
+    .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .brand-logo { width: 52px; height: 52px; object-fit: contain; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); background: #fff; }
+    .brand-sub { margin: 2px 0 0 0; color: #556; font-size: 13px; }
     .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
     input[type="text"], textarea { width: 100%; max-width: 600px; padding: 8px; font-family: inherit; }
     textarea { min-height: 120px; }
     button { padding: 8px 12px; }
     .log { white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 8px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid > div { min-width: 0; }
+    .explorer { border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .explorer-head { display: flex; gap: 8px; align-items: center; padding: 10px; background: #fafafa; border-bottom: 1px solid #eee; }
+    .crumb { cursor: pointer; color: #0b57d0; text-decoration: underline; }
+    .entries { max-height: 320px; overflow: auto; }
+    .entry { display: grid; grid-template-columns: 28px 1fr 120px 160px minmax(120px, 1fr); gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f1f1f1; font-size: 13px; }
+    .entry:last-child { border-bottom: 0; }
+    .entry-name-folder { cursor: pointer; color: #0b57d0; font-weight: 600; }
+    .entry-name-file { cursor: pointer; color: #0b57d0; text-decoration: underline; }
+    .entry-name-file:hover { color: #063a8f; }
+    .entry-dim { color: #777; }
+    .entry-attrs { color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .attrs-btn { font-size: 12px; padding: 2px 6px; cursor: pointer; }
+    .attrs-panel { margin-top: 12px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fafafa; min-width: 0; max-width: 100%; }
+    .attrs-panel h3 { margin: 0 0 8px 0; font-size: 14px; }
+    .attrs-pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; overflow-x: auto; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; margin: 0; }
+    .replica-grid { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 140px; }
+    .table-list { border: 1px solid #ddd; border-radius: 8px; padding: 6px; max-height: 220px; overflow: auto; background: #fff; }
+    .table-item { cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+    .table-item:hover { background: #f1f5ff; }
+    .query-result { border: 1px solid #ddd; border-radius: 8px; background: #fff; padding: 8px; min-height: 120px; max-height: 420px; overflow: auto; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .query-meta { color: #666; margin-bottom: 8px; }
+    .query-table { border-collapse: collapse; width: 100%; min-width: 360px; }
+    .query-table th, .query-table td { border: 1px solid #e6e6e6; padding: 4px 6px; text-align: left; vertical-align: top; }
+    .query-table th { background: #f7f8fb; position: sticky; top: 0; z-index: 1; }
+    .query-null { color: #999; font-style: italic; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0; margin: 12px 0 0 0; border-bottom: 1px solid #d6d9df; }
+    .tab-btn { border: 1px solid #d6d9df; border-bottom: none; background: #f5f7fb; border-radius: 10px 10px 0 0; cursor: pointer; margin-right: 6px; padding: 10px 14px; }
+    .tab-btn.active { background: #fff; color: #111; position: relative; top: 1px; font-weight: 600; }
+    .tab-panel { display: none; border: 1px solid #d6d9df; border-top: none; padding: 14px; }
+    .tab-panel.active { display: block; }
   </style>
 </head>
 <body>
-  <h1>Bao WASM Demo</h1>
-  <p>This page loads the Go WASM module and exposes a tiny JS wrapper to exercise create/open, write/read, and list operations against a WebDAV/memory backend.</p>
-
-  <section class="grid">
+  <div class="row" style="justify-content: flex-end;">
+    <button id="btn-copy-log" title="Copy recent logs">Copy Log</button>
+  </div>
+  <div class="brand">
+    <img class="brand-logo" src="./bao-logo.png" alt="Bao logo" />
     <div>
-      <h2>Config</h2>
-      <div class="row">
-        <label>URL</label>
-        <input id="url" type="text" placeholder="davs://example.com/bao or mem://demo" />
-      </div>
-      <div class="row">
-        <label>Author (public id)</label>
-        <input id="author" type="text" placeholder="optional; leave empty for demo" />
-      </div>
-      <div class="row">
-        <button id="btn-create">Create</button>
-        <button id="btn-open">Open</button>
-      </div>
+      <h1>Bao WASM Demo</h1>
+      <p class="brand-sub">Secure vault and replica playground</p>
     </div>
+  </div>
+  <p>This page loads the Go WASM module and exposes a tiny JS wrapper to exercise create/open, write/read, and list operations against a WebDAV/memory backend.</p>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab-target="tab-identity">Identity</button>
+    <button class="tab-btn" data-tab-target="tab-connect">Connect</button>
+    <button class="tab-btn" data-tab-target="tab-vault">Vault</button>
+    <button class="tab-btn" data-tab-target="tab-replica">Replica</button>
+    <button class="tab-btn" data-tab-target="tab-db">DB</button>
+  </div>
 
-    <div>
-      <h2>Read/Write</h2>
+  <section id="tab-identity" class="tab-panel active">
+    <h2>Identity</h2>
       <div class="row">
-        <label>Path</label>
-        <input id="path" type="text" placeholder="/hello.txt" />
+        <label>Private ID</label>
+        <input id="private-id" type="text" placeholder="PrivateID for vault access" />
       </div>
       <div class="row">
-        <label>Group</label>
-        <input id="group" type="text" placeholder="public" value="public" />
+        <label>Public ID</label>
+        <input id="public-id" type="text" placeholder="Derived from Private ID" readonly />
       </div>
       <div class="row">
-        <label>Content</label>
-        <textarea id="content" placeholder="Type something to store...\n"></textarea>
+        <button id="btn-generate-id">Generate ID</button>
+        <button id="btn-save-id">Save ID</button>
+      </div>
+  </section>
+
+  <section id="tab-connect" class="tab-panel">
+    <h2>Connection</h2>
+      <div class="row">
+        <label>Storage Config (YAML or JSON, parsed in JS)</label>
+        <textarea id="storage-config" placeholder='id: demo
+type: s3
+s3:
+  endpoint: https://ACCOUNT.r2.cloudflarestorage.com
+  region: auto
+  bucket: magpie
+  prefix: akane
+  auth:
+    accessKeyId: ...
+    secretAccessKey: ...
+    sessionToken: ...'></textarea>
       </div>
       <div class="row">
-        <button id="btn-write">Write</button>
-        <button id="btn-read">Read</button>
-        <button id="btn-list">List dir</button>
+        <label>Creator Public ID</label>
+        <input id="creator-public-id" type="text" placeholder="Vault creator public ID (required to open existing vault)" />
+      </div>
+      <div class="row">
+        <label><input id="auto-open" type="checkbox" checked /> Auto-open on page load</label>
+      </div>
+      <div class="row">
+        <label>Fallback URL</label>
+        <input id="url" type="text" placeholder="mem://demo or davs://user:pass@host/base (used only when Storage Config is empty)" />
+      </div>
+      <div class="row">
+        <button id="btn-open">Open</button>
+        <button id="btn-sync">Sync</button>
+        <button id="btn-close">Close</button>
+      </div>
+  </section>
+
+  <section id="tab-vault" class="tab-panel">
+    <h2>Vault Explorer</h2>
+      <div class="row">
+        <label>Dir</label>
+        <input id="dir" type="text" placeholder="posts, users, or empty for root" />
+      </div>
+      <div class="row">
+        <label>Limit</label>
+        <input id="dir-limit" type="text" value="200" />
+      </div>
+      <div class="row">
+        <button id="btn-list">Open Dir</button>
+      </div>
+      <div class="row">
+        <label>Upload File</label>
+        <input id="upload-file" type="file" />
+      </div>
+      <div class="row">
+        <label>Destination Path</label>
+        <input id="upload-dest" type="text" placeholder="defaults to current dir + file name" />
+      </div>
+      <div class="row">
+        <button id="btn-upload">Upload</button>
+      </div>
+      <div class="explorer">
+        <div class="explorer-head">
+          <button id="btn-up">Up</button>
+          <strong>Path:</strong>
+          <span id="explorer-breadcrumbs"></span>
+        </div>
+        <div id="entries" class="entries"></div>
+      </div>
+      <div class="attrs-panel">
+        <h3>Selected File Attributes</h3>
+        <pre id="attrs-view" class="attrs-pre">Click an "attrs" badge in the file list.</pre>
+      </div>
+  </section>
+
+  <section id="tab-replica" class="tab-panel">
+    <h2>Replica</h2>
+    <div class="row">
+      <label>Replica DB Path</label>
+      <input id="replica-db-path" type="text" value="myapp/replica.sqlite" placeholder="myapp/replica.sqlite" />
+    </div>
+    <div class="row">
+      <label>Replica Folder</label>
+      <input id="replica-dir" type="text" value="replica" placeholder="replica" />
+    </div>
+    <div class="row">
+      <label>Replica DDL (required for key-based transactions like INSERT_POST)</label>
+      <textarea id="replica-ddl" placeholder='-- INSERT_POST 1.0
+INSERT INTO posts (...) VALUES (...);
+
+-- SELECT_POSTS 1.0
+SELECT ...;'></textarea>
+    </div>
+    <div class="row">
+      <button id="btn-replica-open">Open Replica</button>
+      <button id="btn-replica-sync">Sync Replica</button>
+      <button id="btn-replica-tables">Refresh Tables</button>
+    </div>
+    <div class="row">
+      <label>SQL Query</label>
+      <input id="replica-query" type="text" placeholder='SELECT * FROM "my_table" LIMIT 20' />
+    </div>
+    <div class="row">
+      <label>Args (JSON map)</label>
+      <input id="replica-args" type="text" placeholder='{"id": 1}' />
+    </div>
+    <div class="row">
+      <label>Max Rows</label>
+      <input id="replica-max" type="text" value="100" />
+    </div>
+    <div class="row">
+      <button id="btn-replica-fetch">Run Query</button>
+      <button id="btn-replica-exec">Run Exec</button>
+    </div>
+    <div class="replica-grid">
+      <div>
+        <strong>Tables</strong>
+        <div id="replica-tables" class="table-list"></div>
+      </div>
+      <div>
+        <strong>Result</strong>
+        <div id="replica-result" class="query-result"></div>
       </div>
     </div>
   </section>
 
-  <h2>Log</h2>
-  <div id="log" class="log"></div>
-
-  <hr />
-  <section class="grid">
+  <section id="tab-db" class="tab-panel">
+    <div class="grid">
     <div>
       <h2>DB Config</h2>
+      <div class="row">
+        <label>Vault DB Path</label>
+        <input id="db-vault-path" type="text" value="myapp/main.sqlite" placeholder="myapp/main.sqlite" />
+      </div>
       <div class="row">
         <label>Driver</label>
         <input id="db-driver" type="text" placeholder="sqlite3 or mem" value="sqlite3" />
@@ -75,6 +226,7 @@
       </div>
       <div class="row">
         <button id="btn-db-open">Open DB</button>
+        <button id="btn-delete-db">Delete Local DB</button>
       </div>
     </div>
 
@@ -98,11 +250,12 @@
         <button id="btn-db-one">Fetch One</button>
       </div>
     </div>
+    </div>
   </section>
 
   <!-- Preload sqlite3; the worker will also importScripts this file. -->
   <script src="sqlite3.js"></script>
   <script src="../build/wasm/wasm_exec.js"></script>
-  <script src="main.js" type="module"></script>
+  <script src="main.js?v=20260304-10" type="module"></script>
 </body>
 </html>

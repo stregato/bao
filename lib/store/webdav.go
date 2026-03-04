@@ -24,6 +24,7 @@ type WebDAVConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	BasePath string `json:"basePath"`
+	Query    string `json:"query"`
 	Verbose  int    `json:"verbose"`
 	Https    bool   `json:"https"`
 }
@@ -38,6 +39,9 @@ func OpenWebDAV(id string, c WebDAVConfig) (Store, error) {
 	} else {
 		port := core.DefaultIfZero(c.Port, 443)
 		conn = fmt.Sprintf("http://%s:%d/%s", c.Host, port, c.BasePath)
+	}
+	if c.Query != "" {
+		conn = conn + "?" + c.Query
 	}
 
 	client := gowebdav.NewClient(conn, c.Username, c.Password)

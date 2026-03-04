@@ -81,6 +81,7 @@ type IOOption struct {
 	Scheduled    bool              `json:"scheduled,omitempty"`    // If true, the operation is scheduled to be performed later, and the caller does not wait for its completion. The parameter `progress` is ignored in this case.
 	NoEncryption bool              `json:"noEncryption,omitempty"` // If true, the file is stored without encryption. This option is only applicable for write operations and is ignored for other operations.
 	EcRecipient  security.PublicID `json:"ecRecipient,omitempty"`  // If set, the file is encrypted using EC encryption with the specified recipient's public ID. This option is only applicable for write operations and is ignored for other operations.
+	Retention    time.Duration     `json:"retention,omitempty"`    // Optional per-file retention. If set, it can only shorten the vault retention.
 
 	Progress chan int64 `json:"-"`
 }

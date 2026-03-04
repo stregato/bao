@@ -11,6 +11,7 @@
 **/*egg-info
 **/.DS_Store
 
+.gocache/
 android_arm64/
 darwin_arm64/
 darwin_amd64/
@@ -23,6 +24,7 @@ libs/
 pyenv/
 __pycache__/
 .venv/
+lib/vault/file:/
 
 
 

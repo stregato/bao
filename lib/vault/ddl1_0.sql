@@ -162,6 +162,34 @@ CREATE TABLE IF NOT EXISTS files (
 -- INIT 1.2
 ALTER TABLE files ADD COLUMN ecRecipient VARCHAR(100) NOT NULL DEFAULT '';
 
+-- INIT 1.4
+-- Repair legacy rows created while JS bind fallback could drop named parameters.
+-- keyId is semantically required and defaults to 0 for public entries.
+UPDATE files SET keyId = 0 WHERE keyId IS NULL;
+
+-- INIT 1.5
+-- Backfill missing root directory markers (e.g. "replica") from existing file rows.
+INSERT INTO files (vault, storeDir, storeName, dir, name, localCopy, modTime, size, allocatedSize, flags, authorId, keyId, attrs, ecRecipient)
+SELECT DISTINCT src.vault, '', '', '.', src.topName, '', 0, 0, 0, 0, '', 0, NULL, ''
+FROM (
+    SELECT vault,
+           CASE
+               WHEN dir = '' OR dir = '.' THEN ''
+               WHEN instr(dir, '/') = 0 THEN dir
+               ELSE substr(dir, 1, instr(dir, '/') - 1)
+           END AS topName
+    FROM files
+) src
+WHERE src.topName <> ''
+  AND NOT EXISTS (
+      SELECT 1
+      FROM files f
+      WHERE f.vault = src.vault
+        AND f.dir = '.'
+        AND f.name = src.topName
+        AND f.modTime = 0
+  );
+
 -- INIT 1.0
 CREATE INDEX IF NOT EXISTS idx_files_vault_dir ON files (vault, dir);
 CREATE INDEX IF NOT EXISTS idx_files_vault_storeDir ON files (vault, storeDir);
@@ -169,6 +197,33 @@ CREATE INDEX IF NOT EXISTS idx_files_vault_storeDir_storeName ON files (vault, s
 CREATE INDEX IF NOT EXISTS idx_files_vault_dir_name ON files (vault, dir, name);
 CREATE INDEX IF NOT EXISTS idx_files_vault_dir_name_modTime ON files (vault, dir, name, modTime);
 CREATE INDEX IF NOT EXISTS idx_files_name_modTime ON files(name, modTime);
+
+-- INIT 1.6
+CREATE TABLE IF NOT EXISTS file_expirations (
+    vault VARCHAR(1024) NOT NULL,
+    storeDir VARCHAR(32) NOT NULL,
+    storeName VARCHAR(32) NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    PRIMARY KEY(vault, storeDir, storeName)
+);
+
+-- INIT 1.6
+CREATE INDEX IF NOT EXISTS idx_file_expirations_vault_expires ON file_expirations (vault, expiresAt);
+
+-- SET_FILE_EXPIRATION 1.6
+INSERT INTO file_expirations (vault, storeDir, storeName, expiresAt)
+VALUES (:vault, :storeDir, :storeName, :expiresAt)
+ON CONFLICT(vault, storeDir, storeName) DO UPDATE SET expiresAt = excluded.expiresAt;
+
+-- GET_EXPIRED_FILE_EXPIRATIONS 1.6
+SELECT storeDir, storeName
+FROM file_expirations
+WHERE vault = :vault AND expiresAt > 0 AND expiresAt <= :expiresAt
+ORDER BY expiresAt ASC
+LIMIT :limit;
+
+-- DELETE_FILE_EXPIRATION 1.6
+DELETE FROM file_expirations WHERE vault = :vault AND storeDir = :storeDir AND storeName = :storeName;
 
 -- GET_LAST_STORE_DIR 1.0
 SELECT storeDir FROM files WHERE vault = :vault AND storeDir LIKE :baseDir || '%'
@@ -195,16 +250,16 @@ WHERE NOT EXISTS (
 SELECT sf.id, sf.name, sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs
 FROM files sf WHERE sf.vault = :vault AND sf.flags & :flagsM != 0 ORDER BY sf.id ASC;
 
--- GET_FILES_IN_DIR 1.3
+-- GET_FILES_IN_DIR 1.4
 SELECT sf.id, sf.name, sf.localCopy, sf.modTime, sf.size, sf.allocatedSize, sf.flags, sf.attrs, sf.authorId, sf.keyId, sf.storeDir, sf.storeName, sf.ecRecipient
 FROM files sf
 JOIN (
-    SELECT name, MAX(modTime) AS maxModTime
+    SELECT name, MAX(id) AS maxId
     FROM files
     WHERE vault = :vault AND dir = :dir AND modTime >= :since AND id > :afterId
     GROUP BY name
-) latest ON sf.name = latest.name AND sf.modTime = latest.maxModTime
-WHERE sf.vault = :vault AND sf.dir = :dir AND sf.modTime >= :since and sf.id > :afterId
+) latest ON sf.id = latest.maxId
+WHERE sf.vault = :vault AND sf.dir = :dir
 LIMIT :limit;
 
 -- GET_FILE_BY_ID 1.3
@@ -237,6 +292,9 @@ ORDER BY modTime DESC LIMIT 1 OFFSET :version
 SELECT storeName FROM files 
 WHERE vault = :vault AND storeDir = :storeDir
 
+-- GET_ALL_DIRS 1.0
+SELECT DISTINCT dir FROM files WHERE vault = :vault AND dir <> '' AND dir <> '.'
+
 -- UPDATE_FILE_ALLOCATED_SIZE 1.0
 UPDATE files SET allocatedSize = :allocatedSize WHERE vault = :vault AND id = :id
 
@@ -249,11 +307,14 @@ UPDATE files SET localCopy = :localCopy WHERE vault = :vault AND id = :id;
 -- GET_FILE_IDS_BY_FLAGS 1.0
 SELECT id FROM files WHERE vault = :vault AND (flags & :flagsMask) != 0 ORDER BY id ASC;
 
--- DELETE_FILES_BEFORE_MODTIME 1.0
-DELETE FROM files WHERE vault = :vault AND modTime > 0 AND modTime < :modTime;
+-- DELETE_FILES_BEFORE_MODTIME 1.7
+UPDATE files SET flags = (flags | 4) WHERE vault = :vault AND modTime > 0 AND modTime < :modTime;
 
--- CALCULATE_ALLOCATED_SIZE 1.0
-SELECT COALESCE(SUM(allocatedSize), 0) FROM files WHERE vault = :vault;
+-- DELETE_FILES_BY_STORE_OBJECT 1.7
+UPDATE files SET flags = (flags | 4) WHERE vault = :vault AND storeDir = :storeDir AND storeName = :storeName;
+
+-- CALCULATE_ALLOCATED_SIZE 1.7
+SELECT COALESCE(SUM(allocatedSize), 0) FROM files WHERE vault = :vault AND (flags & 4) = 0;
 
 -- INIT 1.0
 CREATE TABLE IF NOT EXISTS transaction_metadata (

@@ -119,7 +119,7 @@ wasm: $(BUILD_PATH)/wasm/bao.wasm $(BUILD_PATH)/wasm/wasm_exec.js
 .PHONY: web
 web: wasm
 	echo "Starting local web server at http://localhost:$(WEB_PORT)/wasm/index.html"
-	python3 -m http.server $(WEB_PORT)
+	python3 wasm/dev_server.py --port $(WEB_PORT) --root .
 	
 lib: mac ios windows linux android
 	echo "Build all libraries"

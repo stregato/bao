@@ -23,16 +23,27 @@ func (v *Vault) Delete(name string, options IOOption) error {
 	storeDir := path.Join(baseFolder, getSegmentDir(v.Config.SegmentInterval))
 	storeName := generateFilename(now)
 
-	_, err = v.writeRecord(name, "", PendingWrite|Deleted, nil, options)
+	tombstone := file
+	tombstone.Name = nameWithoutEncryptionToken(name)
+	tombstone.LocalCopy = ""
+	tombstone.StoreDir = storeDir
+	tombstone.StoreName = storeName
+	tombstone.ModTime = now
+	retention := effectiveRetention(v.Config.Retention, options.Retention)
+	tombstone.ExpiresAt = truncateToSecond(now.Add(retention))
+	tombstone.Flags |= PendingWrite | Deleted
+	tombstone.Flags &^= PendingRead
+
+	tombstone, err = v.writeFileHeadToDB(tombstone)
 	if err != nil {
 		return core.Error(core.FileError, "cannot write record for file %s", name, err)
 	}
 
-	encMethod, ecRecipient, err := v.encryptionMethodForFile(file)
+	encMethod, ecRecipient, err := v.encryptionMethodForFile(tombstone)
 	if err != nil {
 		return core.Error(core.ParseError, "cannot determine encryption mode for %s", name, err)
 	}
-	head, err := encodeHead(encMethod, file, ecRecipient, v.UserSecret, v.getKey)
+	head, err := encodeHead(encMethod, tombstone, ecRecipient, v.UserSecret, v.getKey)
 	if err != nil {
 		return core.Error(core.DbError, "cannot encode head in Bao.Delete", err)
 	}

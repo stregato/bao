@@ -4,9 +4,12 @@ package sqlx
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall/js"
 
@@ -71,9 +74,10 @@ func (r Result) RowsAffected() (int64, error) {
 func OpenEngine(driverName, dataSourceName string) (*Engine, error) {
 	ctor := js.Global().Get("Worker")
 	if !ctor.Truthy() {
-		return nil, core.Errorw(core.GenericError, "Worker API not available")
+		return nil, core.Error(core.GenericError, "Worker API not available")
 	}
-	w := ctor.New("./db_worker.js")
+	ts := js.Global().Get("Date").Call("now").Int()
+	w := ctor.New("./db_worker.js?v=" + strconv.Itoa(ts))
 
 	e := &Engine{
 		w:       w,
@@ -105,7 +109,7 @@ func OpenEngine(driverName, dataSourceName string) (*Engine, error) {
 
 	if _, err := e.call(context.Background(), "open", map[string]any{"path": dataSourceName}); err != nil {
 		e.dispose()
-		return nil, core.Errorw(core.DbError, "cannot open JS DB: %s", err.Error())
+		return nil, core.Error(core.DbError, "cannot open JS DB: %s", err.Error())
 	}
 	return e, nil
 }
@@ -157,9 +161,13 @@ func (e *Engine) QueryRow(query string, args ...any) *Row {
 	cols := toStringSlice(v.Get("columns"))
 	decl := toStringSlice(v.Get("declTypes"))
 	if !v.Get("hasRow").Truthy() {
-		return &Row{cols: cols, decl: decl, data: nil, err: errors.New("sql: no rows")}
+		return &Row{cols: cols, decl: decl, data: nil, err: sql.ErrNoRows}
 	}
-	return &Row{cols: cols, decl: decl, data: toAnySlice(v.Get("row"))}
+	row := toAnySlice(v.Get("row"))
+	if len(cols) > 0 && len(row) > len(cols) {
+		row = row[:len(cols)]
+	}
+	return &Row{cols: cols, decl: decl, data: row}
 }
 
 func (e *Engine) Query(query string, args ...any) (*Rows, error) {
@@ -216,9 +224,13 @@ func (s *Stmt) QueryRow(args ...any) *Row {
 	cols := toStringSlice(v.Get("columns"))
 	decl := toStringSlice(v.Get("declTypes"))
 	if !v.Get("hasRow").Truthy() {
-		return &Row{cols: cols, decl: decl, err: errors.New("sql: no rows")}
+		return &Row{cols: cols, decl: decl, err: sql.ErrNoRows}
 	}
-	return &Row{cols: cols, decl: decl, data: toAnySlice(v.Get("row"))}
+	row := toAnySlice(v.Get("row"))
+	if len(cols) > 0 && len(row) > len(cols) {
+		row = row[:len(cols)]
+	}
+	return &Row{cols: cols, decl: decl, data: row}
 }
 
 /*** Row/Rows API (database/sql-like) ***/
@@ -238,7 +250,7 @@ func (r *Row) Scan(dest ...any) error {
 		return r.err
 	}
 	if r.data == nil {
-		return errors.New("no row")
+		return sql.ErrNoRows
 	}
 	if err := scanInto(dest, r.data); err != nil {
 		// mirror database/sql behavior: keep the error available via Err().
@@ -359,7 +371,7 @@ func (e *Engine) call(ctx context.Context, op string, payload map[string]any) (j
 	select {
 	case v := <-ch:
 		if !v.Get("ok").Truthy() {
-			return js.Undefined(), errors.New(v.Get("err").String())
+			return js.Undefined(), errors.New(fmt.Sprintf("worker op=%s failed: %s", op, v.Get("err").String()))
 		}
 		return v, nil
 	case <-ctx.Done():
@@ -370,39 +382,146 @@ func (e *Engine) call(ctx context.Context, op string, payload map[string]any) (j
 	}
 }
 
-func coerceArgs(args []any) []any {
-	out := make([]any, len(args))
-	for i, a := range args {
+func coerceArgs(args []any) any {
+	named := map[string]any{}
+	hasNamed := false
+	positional := make([]any, 0, len(args))
+
+	for _, a := range args {
 		switch t := a.(type) {
-		case []byte:
-			out[i] = t // structured clone copies to ArrayBuffer
+		case sql.NamedArg:
+			hasNamed = true
+			k := strings.TrimSpace(t.Name)
+			if k == "" {
+				continue
+			}
+			v := jsSafeValue(t.Value)
+			named[":"+k] = v
 		default:
-			out[i] = a
+			positional = append(positional, jsSafeValue(a))
 		}
 	}
-	return out
+	if hasNamed {
+		return named
+	}
+	return positional
+}
+
+func jsSafeValue(v any) any {
+	switch t := v.(type) {
+	case nil, bool, string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return t
+	case []byte:
+		a := make([]any, len(t))
+		for i, b := range t {
+			a[i] = int(b)
+		}
+		return a
+	default:
+		rv := reflect.ValueOf(v)
+		if rv.IsValid() {
+			switch rv.Kind() {
+			case reflect.Bool:
+				return rv.Bool()
+			case reflect.String:
+				return rv.String()
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				return rv.Int()
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+				return int64(rv.Uint())
+			case reflect.Float32, reflect.Float64:
+				return rv.Float()
+			case reflect.Slice:
+				// []byte aliases (e.g., custom binary types) should be bound as byte arrays.
+				if rv.Type().Elem().Kind() == reflect.Uint8 {
+					n := rv.Len()
+					a := make([]any, n)
+					for i := 0; i < n; i++ {
+						a[i] = int(rv.Index(i).Uint())
+					}
+					return a
+				}
+			}
+		}
+		return fmt.Sprint(v)
+	}
 }
 
 func toStringSlice(v js.Value) []string {
-	if !v.Truthy() {
+	if !jsTruthy(v) {
 		return nil
 	}
-	n := v.Length()
+	n, ok := jsLength(v)
+	if !ok {
+		return nil
+	}
 	out := make([]string, n)
 	for i := 0; i < n; i++ {
-		out[i] = v.Index(i).String()
+		el, ok := jsIndex(v, i)
+		if !ok {
+			continue
+		}
+		out[i] = el.String()
 	}
 	return out
 }
 func toAnySlice(v js.Value) []any {
-	if !v.Truthy() {
+	if !jsTruthy(v) {
 		return nil
 	}
-	n := v.Length()
+	// Some sqlite-wasm calls can return a scalar for single-column rows.
+	// Normalize those to a one-element slice so Scan() receives one value.
+	t, ok := jsType(v)
+	if !ok {
+		return nil
+	}
+	switch t {
+	case js.TypeBoolean:
+		return []any{v.Bool()}
+	case js.TypeNumber:
+		return []any{v.Float()}
+	case js.TypeString:
+		return []any{v.String()}
+	}
+	n, ok := jsLength(v)
+	if !ok {
+		return nil
+	}
+	uint8ArrayCtor := js.Global().Get("Uint8Array")
+	// Some sqlite-wasm variants may return array-like objects where `Length()`
+	// is 0 but a numeric `length` property exists. Prefer index-based reading.
+	if n == 0 && t == js.TypeObject && !jsInstanceOf(v, uint8ArrayCtor) {
+		lp, ok := jsGet(v, "length")
+		if ok && jsTruthy(lp) {
+			lt, ok := jsType(lp)
+			if ok && lt == js.TypeNumber {
+				if ln := lp.Int(); ln > 0 {
+					n = ln
+				}
+			}
+		}
+	}
+	// Last resort for plain objects: use Object.values(row).
+	if n == 0 && t == js.TypeObject && !jsInstanceOf(v, uint8ArrayCtor) {
+		vals := js.Global().Get("Object").Call("values", v)
+		if jsTruthy(vals) {
+			v = vals
+			n, _ = jsLength(v)
+		}
+	}
 	out := make([]any, n)
 	for i := 0; i < n; i++ {
-		el := v.Index(i)
-		switch el.Type() {
+		el, ok := jsIndex(v, i)
+		if !ok {
+			out[i] = nil
+			continue
+		}
+		et, ok := jsType(el)
+		if !ok {
+			out[i] = nil
+			continue
+		}
+		switch et {
 		case js.TypeBoolean:
 			out[i] = el.Bool()
 		case js.TypeNumber:
@@ -410,8 +529,13 @@ func toAnySlice(v js.Value) []any {
 		case js.TypeString:
 			out[i] = el.String()
 		case js.TypeObject:
-			if el.InstanceOf(js.Global().Get("Uint8Array")) {
-				b := make([]byte, el.Get("length").Int())
+			if jsInstanceOf(el, uint8ArrayCtor) {
+				lv, ok := jsGet(el, "length")
+				if !ok {
+					out[i] = nil
+					continue
+				}
+				b := make([]byte, lv.Int())
 				js.CopyBytesToGo(b, el)
 				out[i] = b
 			} else {
@@ -424,20 +548,116 @@ func toAnySlice(v js.Value) []any {
 	return out
 }
 func to2DAny(v js.Value) [][]any {
-	if !v.Truthy() {
+	if !jsTruthy(v) {
 		return nil
 	}
-	n := v.Length()
+	n, ok := jsLength(v)
+	if !ok {
+		return nil
+	}
 	out := make([][]any, n)
 	for i := 0; i < n; i++ {
-		out[i] = toAnySlice(v.Index(i))
+		row, ok := jsIndex(v, i)
+		if !ok {
+			continue
+		}
+		out[i] = toAnySlice(row)
 	}
 	return out
+}
+
+func jsTruthy(v js.Value) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return v.Truthy()
+}
+
+func jsType(v js.Value) (t js.Type, ok bool) {
+	defer func() {
+		if recover() != nil {
+			t = js.TypeUndefined
+			ok = false
+		}
+	}()
+	return v.Type(), true
+}
+
+func jsLength(v js.Value) (n int, ok bool) {
+	defer func() {
+		if recover() != nil {
+			n = 0
+			ok = false
+		}
+	}()
+	return v.Length(), true
+}
+
+func jsIndex(v js.Value, i int) (out js.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			out = js.Undefined()
+			ok = false
+		}
+	}()
+	return v.Index(i), true
+}
+
+func jsGet(v js.Value, key string) (out js.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			out = js.Undefined()
+			ok = false
+		}
+	}()
+	return v.Get(key), true
+}
+
+func jsInstanceOf(v js.Value, ctor js.Value) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	if !jsTruthy(v) || !jsTruthy(ctor) {
+		return false
+	}
+	return v.InstanceOf(ctor)
 }
 
 func scanInto(dest []any, row []any) error {
 	if len(dest) != len(row) {
 		return fmt.Errorf("scan: want %d values, got %d", len(dest), len(row))
+	}
+	toBytes := func(val any) ([]byte, error) {
+		switch v := val.(type) {
+		case []byte:
+			return v, nil
+		case string:
+			return []byte(v), nil
+		default:
+			return nil, fmt.Errorf("cannot convert %T to []byte", val)
+		}
+	}
+	toInt64 := func(val any) (int64, error) {
+		switch v := val.(type) {
+		case int:
+			return int64(v), nil
+		case int64:
+			return v, nil
+		case float64:
+			return int64(v), nil
+		case string:
+			n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("parse string %q: %w", v, err)
+			}
+			return n, nil
+		default:
+			return 0, fmt.Errorf("cannot convert %T to int64", val)
+		}
 	}
 	for i := range dest {
 		switch d := dest[i].(type) {
@@ -449,8 +669,33 @@ func scanInto(dest []any, row []any) error {
 				*d = int(v)
 			case float64:
 				*d = int(v)
+			case string:
+				n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+				if err != nil {
+					return fmt.Errorf("scan int parse string %q: %w", v, err)
+				}
+				*d = int(n)
 			default:
 				return fmt.Errorf("scan int: %T", row[i])
+			}
+		case *uint8:
+			switch v := row[i].(type) {
+			case uint8:
+				*d = v
+			case int:
+				*d = uint8(v)
+			case int64:
+				*d = uint8(v)
+			case float64:
+				*d = uint8(v)
+			case string:
+				n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+				if err != nil {
+					return fmt.Errorf("scan uint8 parse string %q: %w", v, err)
+				}
+				*d = uint8(n)
+			default:
+				return fmt.Errorf("scan uint8: %T", row[i])
 			}
 		case *int64:
 			switch v := row[i].(type) {
@@ -460,6 +705,12 @@ func scanInto(dest []any, row []any) error {
 				*d = int64(v)
 			case float64:
 				*d = int64(v)
+			case string:
+				n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+				if err != nil {
+					return fmt.Errorf("scan int64 parse string %q: %w", v, err)
+				}
+				*d = n
 			default:
 				return fmt.Errorf("scan int64: %T", row[i])
 			}
@@ -504,6 +755,53 @@ func scanInto(dest []any, row []any) error {
 		case *any:
 			*d = row[i]
 		default:
+			// Handle pointers to named numeric aliases (e.g. vault.Access, type byte).
+			rv := reflect.ValueOf(dest[i])
+			if rv.IsValid() && rv.Kind() == reflect.Ptr && !rv.IsNil() && rv.Elem().CanSet() {
+				elem := rv.Elem()
+				switch elem.Kind() {
+				case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint:
+					n, err := toInt64(row[i])
+					if err != nil {
+						return fmt.Errorf("scan %s: %w", elem.Type(), err)
+					}
+					elem.SetUint(uint64(n))
+					continue
+				case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int:
+					n, err := toInt64(row[i])
+					if err != nil {
+						return fmt.Errorf("scan %s: %w", elem.Type(), err)
+					}
+					elem.SetInt(n)
+					continue
+				case reflect.String:
+					switch v := row[i].(type) {
+					case string:
+						elem.SetString(v)
+					case []byte:
+						elem.SetString(string(v))
+					default:
+						return fmt.Errorf("scan %s: cannot convert %T to string", elem.Type(), row[i])
+					}
+					continue
+				case reflect.Slice:
+					if elem.Type().Elem().Kind() == reflect.Uint8 {
+						b, err := toBytes(row[i])
+						if err != nil {
+							return fmt.Errorf("scan %s: %w", elem.Type(), err)
+						}
+						rb := reflect.ValueOf(b)
+						if rb.Type().AssignableTo(elem.Type()) {
+							elem.Set(rb)
+						} else if rb.Type().ConvertibleTo(elem.Type()) {
+							elem.Set(rb.Convert(elem.Type()))
+						} else {
+							return fmt.Errorf("scan %s: cannot assign []byte", elem.Type())
+						}
+						continue
+					}
+				}
+			}
 			return fmt.Errorf("unsupported dest type %T", dest[i])
 		}
 	}

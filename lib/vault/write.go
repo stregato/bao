@@ -90,10 +90,12 @@ func getIv(name string) ([]byte, error) {
 func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte, options IOOption) (File, error) {
 	core.Start("writing record to %s", dest)
 	now := core.Now()
+	retention := effectiveRetention(v.Config.Retention, options.Retention)
+	expiresAt := truncateToSecond(now.Add(retention))
 
 	var size int64
 	if source != "" {
-		stat, err := os.Stat(source)
+		stat, err := statLocalSource(source)
 		if err != nil {
 			return File{}, core.Error(core.FileError, "cannot stat source file %s in Bao.Write, name %v, source %v", dest, dest, source, err)
 		}
@@ -138,6 +140,7 @@ func (v *Vault) writeRecord(dest, source string, flags Flags, attrs []byte, opti
 		Size:          size,                                                           // Size of the file
 		AllocatedSize: 0,                                                              // Allocated size, to be updated later
 		ModTime:       now,                                                            // Use current time as modification time
+		ExpiresAt:     expiresAt,                                                      // Expiration time tracked with minute precision
 		IsDir:         false,                                                          // Not a directory
 		Flags:         flags,                                                          // Flags for the file, e.g., Pending, Deleted
 		Attrs:         attrs,                                                          // Optional attributes
@@ -213,7 +216,7 @@ func (v *Vault) writeFile(file File, progress chan int64) error {
 		wg.Done()
 	}()
 	if file.LocalCopy != "" {
-		f, err := os.Open(file.LocalCopy)
+		f, err := openLocalSourceReader(file.LocalCopy)
 		if err != nil {
 			return core.Error(core.FileError, "cannot open local file %s in Bao.Write, name %v, storeDir %v",
 				file.LocalCopy, file.Name, file.StoreDir, err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ func Create(userSecret security.PrivateID, store store.Store, db *sqlx.DB, confi
 	core.Start("creating vault for url %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
-		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", db.DbPath, err)
+		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s: %v", db.DbPath, err, err)
 	}
 
 	if config.SyncRelay != "" && !strings.HasPrefix(config.SyncRelay, "ws") {
@@ -79,8 +80,12 @@ func Create(userSecret security.PrivateID, store store.Store, db *sqlx.DB, confi
 	}
 
 	v.startHousekeeping()
-	if err := v.startSyncRelay(); err != nil {
-		return nil, core.Error(core.NetError, "cannot start sync relay for vault %s", id, err)
+	if runtime.GOOS != "js" {
+		if err := v.startSyncRelay(); err != nil {
+			return nil, core.Error(core.NetError, "cannot start sync relay for vault %s", id, err)
+		}
+	} else {
+		core.Info("sync relay disabled for js runtime")
 	}
 	openedStashesMu.Lock()
 	openedStashes = append(openedStashes, &v)

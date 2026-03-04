@@ -26,22 +26,27 @@ func (v *Vault) calculateAllocatedSize() (int64, error) {
 	var total int64
 	err := v.DB.QueryRow("CALCULATE_ALLOCATED_SIZE", sqlx.Args{"vault": v.ID}, &total)
 	if err != nil {
-		return 0, core.Error(core.GenericError, "cannot calculate allocated size", err)
+		return 0, core.Error(core.GenericError, "cannot calculate allocated size: %v", err, err)
 	}
 	return total, nil
 }
 
 func (v *Vault) retentionCleanup() {
+	now := core.Now()
+
+	// Primary cleanup path: explicit per-file expirations.
+	deletedByExpiration, err := v.cleanupExpiredFiles(now)
+	if err != nil {
+		core.LogError("cannot cleanup expired files: %v", err)
+	}
+
+	// Secondary safety net: legacy time-segment folder sweep.
 	retention := v.Config.Retention
 	if retention <= 0 {
 		retention = DefaultRetention
 	}
-
-	retentionThreshold := core.Now().Add(-retention)
-
-	var deletedDirs int
-	var deletedRecords int64
-
+	retentionThreshold := now.Add(-retention)
+	deletedDirs := 0
 	baseDir := v.dataRoot()
 	ls, _ := v.store.ReadDir(baseDir, store.Filter{})
 	sort.Slice(ls, func(i, j int) bool {
@@ -51,20 +56,18 @@ func (v *Vault) retentionCleanup() {
 		if !l.IsDir() {
 			continue
 		}
-		dir := path.Join(baseDir, l.Name())
-		timestamp, err := time.Parse("20060102150405", l.Name())
-		if err != nil {
-			core.LogError("cannot parse timestamp folder %s: %v", l.Name(), err)
+		timestamp, parseErr := time.Parse("20060102150405", l.Name())
+		if parseErr != nil {
 			continue
 		}
 		if timestamp.Before(retentionThreshold) {
-			store.DeleteDir(v.store, dir)
+			_ = store.DeleteDir(v.store, path.Join(baseDir, l.Name()))
 			deletedDirs++
-			continue
 		}
 	}
 
-	deletedRecords, err := v.deleteFilesBeforeModTime(retentionThreshold)
+	// Secondary DB safety net for stale rows.
+	deletedByModTime, err := v.deleteFilesBeforeModTime(retentionThreshold)
 	if err != nil {
 		core.LogError("cannot delete files before retention threshold: %v", err)
 	}
@@ -75,7 +78,7 @@ func (v *Vault) retentionCleanup() {
 		v.allocatedSize = total
 	}
 
-	core.Info("housekeeping: deleted %d day folders and %d db records by retention threshold", deletedDirs, deletedRecords)
+	core.Info("housekeeping: deleted %d by expiration table, %d old dirs, %d stale DB rows", deletedByExpiration, deletedDirs, deletedByModTime)
 }
 
 func (v *Vault) housekeeping() error {

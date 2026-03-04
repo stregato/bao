@@ -263,6 +263,9 @@ func (v *Vault) syncronizeFile(storeDir, storeName string) (file File, synced bo
 			return file, false, true, nil
 		}
 	}
+	if err := v.setFileExpiration(storeDir, storeName, file.ExpiresAt); err != nil {
+		return File{}, false, false, err
+	}
 	if notForMe {
 		v.markIgnoredStoreName(storeDir, storeName)
 		core.End("file %s is addressed to another user, skipping", n)
@@ -338,6 +341,9 @@ func (v *Vault) writeFileHeadToDB(file File) (File, error) {
 	})
 	if err != nil {
 		return File{}, core.Error(core.DbError, "cannot set file %s/%s", dir, name, err)
+	}
+	if err := v.setFileExpiration(file.StoreDir, file.StoreName, file.ExpiresAt); err != nil {
+		return File{}, err
 	}
 	id, err := r.LastInsertId()
 	if err != nil {

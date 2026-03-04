@@ -194,6 +194,28 @@ func TestWriteAttrs(t *testing.T) {
 	s.Close()
 }
 
+func TestWriteRetentionOverride(t *testing.T) {
+	alice := security.NewPrivateIDMust()
+	db := sqlx.NewTestDB(t, "vault_retention.db", "")
+	store := store.LoadTestStore(t, "test")
+	defer store.Close()
+
+	v, err := Create(alice, store, db, Config{Retention: 24 * time.Hour})
+	core.TestErr(t, err, "Create failed: %v")
+
+	now := core.Now()
+	file, err := v.Write("retention.txt", "", nil, IOOption{Retention: 2 * time.Hour})
+	core.TestErr(t, err, "Write failed: %v")
+
+	expected := truncateToSecond(now.Add(2 * time.Hour))
+	diff := file.ExpiresAt.Sub(expected)
+	if diff < 0 {
+		diff = -diff
+	}
+	core.Assert(t, diff <= time.Second, "expected expiry around %s, got %s", expected, file.ExpiresAt)
+	v.Close()
+}
+
 func TestWriteNestedPath(t *testing.T) {
 	alice := security.NewPrivateIDMust()
 	db := sqlx.NewTestDB(t, "vault_nested.db", "")

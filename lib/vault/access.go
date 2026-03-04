@@ -204,7 +204,10 @@ func (v *Vault) GetAccess(publicID security.PublicID) (Access, error) {
 		core.End("no rows - access 0")
 		return 0, nil // No access
 	}
+	if err != nil {
+		return 0, core.Error(core.DbError, "cannot query access for user %s in vault %s: raw=%q type=%T", publicID, v.ID, err.Error(), err, err)
+	}
 
 	core.End("access %d", access)
-	return access, err
+	return access, nil
 }

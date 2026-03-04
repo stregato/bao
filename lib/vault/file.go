@@ -29,6 +29,7 @@ type File struct {
 	Size          int64             `json:"size"`            // Size of the file in bytes
 	AllocatedSize int64             `json:"allocatedSize"`   // Space allocated for the file in storage
 	ModTime       time.Time         `json:"modTime"`         // Modification time of the file
+	ExpiresAt     time.Time         `json:"expiresAt"`       // Expiration time (second precision), tracked in clear header and expiration table
 	IsDir         bool              `json:"isDir"`           // Indicates if the file is a directory
 	Flags         Flags             `json:"flags"`           // Flags for the file, e.g., Pending, Deleted
 	Attrs         []byte            `json:"attrs,omitempty"` // Optional attrs data, e.g., encryption info

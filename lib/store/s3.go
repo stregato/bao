@@ -1,3 +1,5 @@
+//go:build !js
+
 package store
 
 import (
@@ -32,6 +34,7 @@ type S3 struct {
 type S3ConfigAuth struct {
 	AccessKeyId     string `json:"accessKeyId" yaml:"accessKeyId"`
 	SecretAccessKey string `json:"secretAccessKey" yaml:"secretAccessKey"`
+	SessionToken    string `json:"sessionToken" yaml:"sessionToken"`
 }
 
 type S3Config struct {
@@ -67,7 +70,7 @@ func OpenS3(id string, c S3Config) (Store, error) {
 	options := []func(*config.LoadOptions) error{
 		config.WithEndpointResolverWithOptions(r2Resolver),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(c.Auth.AccessKeyId,
-			c.Auth.SecretAccessKey, "")),
+			c.Auth.SecretAccessKey, c.Auth.SessionToken)),
 		config.WithRegion(c.Region),
 	}
 	switch c.Verbose {
@@ -128,12 +131,27 @@ func (s *S3) createBucketIfNeeded() error {
 		core.Info("bucket %s already exists", s.bucket)
 		return nil
 	}
-	core.Info("bucket %s does not exist: err %v, creating...", s.bucket, err)
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code := strings.ToLower(apiErr.ErrorCode())
+		if code == "accessdenied" || code == "forbidden" {
+			core.Info("bucket %s exists but head is not allowed (%s), continuing", s.bucket, apiErr.ErrorCode())
+			return nil
+		}
+	}
+	core.Info("bucket %s does not exist or is not visible: err %v, creating...", s.bucket, err)
 
 	_, err = s.client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
 		Bucket: aws.String(s.bucket),
 	})
 	if err != nil {
+		if errors.As(err, &apiErr) {
+			code := strings.ToLower(apiErr.ErrorCode())
+			if code == "accessdenied" || code == "forbidden" || code == "bucketalreadyownedbyyou" || code == "bucketalreadyexists" {
+				core.Info("create bucket %s not required or not allowed (%s), continuing", s.bucket, apiErr.ErrorCode())
+				return nil
+			}
+		}
 		return core.Error(core.GenericError, "cannot create bucket %s", s.bucket, err)
 	}
 	core.End("")

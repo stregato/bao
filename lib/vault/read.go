@@ -21,14 +21,14 @@ func (v *Vault) readFile(file File, progress chan int64) error {
 		}
 	}()
 
-	f, err := os.Create(file.LocalCopy)
+	f, err := openLocalCopyWriter(file.LocalCopy)
 	if err != nil {
 		return core.Error(core.FileError, "cannot create file %s", file.LocalCopy, err)
 	}
 	defer func() {
 		f.Close()
 		if err != nil {
-			os.Remove(file.LocalCopy) // Remove the file if there was an error
+			cleanupLocalCopy(file.LocalCopy)
 		}
 	}()
 

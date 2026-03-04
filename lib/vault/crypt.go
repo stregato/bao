@@ -150,6 +150,7 @@ func encodeHead(encMethod string, file File, ecRecipient security.PublicID, auth
 	prefix := make([]byte, headerV1PrefixSize)
 	prefix[0] = headerV1Version
 	prefix[1] = method
+	binary.LittleEndian.PutUint32(prefix[4:8], uint32(unixEpochSeconds(file.ExpiresAt)))
 	binary.LittleEndian.PutUint64(prefix[8:], ref)
 
 	core.End("successfully encoded file head for %s", file.Name)
@@ -170,8 +171,10 @@ func decodeHead(data []byte, userPrivateID security.PrivateID,
 		return File{}, false, false, core.Error(core.ParseError, "unsupported header version: %d", version)
 	}
 	method := data[1]
+	expiresAtSec := int64(binary.LittleEndian.Uint32(data[4:8]))
 	ref := binary.LittleEndian.Uint64(data[8:16])
 	data = data[headerV1PrefixSize:]
+	file.ExpiresAt = timeFromEpochSeconds(expiresAtSec)
 	userID, err := userPrivateID.PublicID()
 	if err != nil {
 		return File{}, false, false, core.Error(core.DbError, "cannot get public ID from private ID in decodeHead", err)
@@ -188,7 +191,7 @@ func decodeHead(data []byte, userPrivateID security.PrivateID,
 	case encMethodEC:
 		if myShortID != ref { // only the intended user can decrypt with their private ID
 			// Normal path: this file is addressed to another recipient.
-			return File{}, true, false, nil
+			return file, true, false, nil
 		}
 		// Use user's private ID to decrypt
 		data, err = security.EcDecrypt(userPrivateID, data)
@@ -201,6 +204,11 @@ func decodeHead(data []byte, userPrivateID security.PrivateID,
 	case encMethodAES:
 		key, err := getKey(ref)
 		if err != nil {
+			if core.ErrorCode(err) == core.AccessDenied {
+				// Normal path: this file is encrypted with a key the current user does not have.
+				// Skip it without failing the whole sync.
+				return file, true, false, nil
+			}
 			return File{}, false, false, core.Error(core.DbError, "cannot get key for key id %d in decodeHead", ref, err)
 		}
 		if key == nil {
@@ -218,7 +226,7 @@ func decodeHead(data []byte, userPrivateID security.PrivateID,
 	}
 
 	var unknownAuthor bool
-	file, unknownAuthor, err = decodeFile(data, myShortID, getUserId)
+	decoded, unknownAuthor, err := decodeFile(data, myShortID, getUserId)
 	if err != nil {
 		return File{}, false, false, core.Error(core.FileError, "cannot decode file head in decodeHead", err)
 	}
@@ -226,6 +234,8 @@ func decodeHead(data []byte, userPrivateID security.PrivateID,
 		// Temporary condition: user table might be stale until blockchain access updates are imported.
 		return File{}, false, true, nil
 	}
+	file = decoded
+	file.ExpiresAt = timeFromEpochSeconds(expiresAtSec)
 	file.KeyId = decodedKeyID
 	file.EcRecipient = decodedRecipient
 	file.Flags &^= AESEncryption | EcEncryption

@@ -190,7 +190,6 @@ func (a *AddAttribute) Apply(s *Vault, author security.PublicID) error {
 		"name":  a.Name,
 		"value": a.Value,
 		"id":    author,
-		"tm":    core.Now().Unix(),
 	})
 	if err != nil {
 		return core.Error(core.GenericError, "cannot add attribute %s for id %s", a.Name, author, err)
@@ -225,20 +224,22 @@ func (v *Vault) addKey(keyId uint64, key []byte) error {
 func (a *AddKey) Apply(v *Vault, author security.PublicID) error {
 	core.Start("applying AddKey by author %s", author)
 
-	access, err := v.GetAccess(author)
+	adminRight, err := v.hasAdminRight(author)
 	if err != nil {
-		return core.Error(core.DbError, "cannot get access for author %s", author, err)
+		return core.Error(core.DbError, "cannot get access for author %s: %s", author, err.Error(), err)
 	}
+	if !adminRight {
+		return core.Error(core.AuthError, "author %s does not have admin rights to add keys in vault %s", author, v.ID)
+	}
+
 	var foundKeyForMe bool
-	if access&Admin != 0 {
-		for publicId, encodedKey := range a.EncryptedKeys {
-			if publicId == v.UserID {
-				err = v.addKey(a.KeyId, encodedKey)
-				if err != nil {
-					return core.Error(core.GenericError, "cannot add key %d in vault %s", a.KeyId, v.ID, err)
-				}
-				foundKeyForMe = true
+	for publicId, encodedKey := range a.EncryptedKeys {
+		if publicId == v.UserID {
+			err = v.addKey(a.KeyId, encodedKey)
+			if err != nil {
+				return core.Error(core.GenericError, "cannot add key %d in vault %s", a.KeyId, v.ID, err)
 			}
+			foundKeyForMe = true
 		}
 	}
 
@@ -258,18 +259,19 @@ func (a *AddKey) String() string {
 func (a *ActiveKeySet) Apply(v *Vault, author security.PublicID) error {
 	core.Start("handling ActiveKeySet by author %s", author)
 
+	adminRight, err := v.hasAdminRight(author)
+	if err != nil {
+		return core.Error(core.DbError, "cannot get access for author %s: %s", author, err.Error(), err)
+	}
+	if !adminRight {
+		return core.Error(core.AuthError, "author %s does not have admin rights to set active keys in vault %s", author, v.ID)
+	}
 	if a.Id != v.UserID {
 		core.End("%d keys, not for me", len(a.Keys))
 		return nil // Not for me
 	}
-	access, err := v.GetAccess(author)
-	if err != nil {
-		return core.Error(core.DbError, "cannot get access for author %s", author, err)
-	}
-	if access&Admin != 0 {
-		for keyId, encodedKey := range a.Keys {
-			v.addKey(keyId, encodedKey)
-		}
+	for keyId, encodedKey := range a.Keys {
+		v.addKey(keyId, encodedKey)
 	}
 	core.End("%d keys for me", len(a.Keys))
 	return nil
@@ -287,42 +289,47 @@ func (a *ActiveKeySet) String() string {
 func (c *ChangeAccess) Apply(v *Vault, author security.PublicID) error {
 	core.Start("")
 
-	adminRight := author == v.Author
-
+	adminRight, err := v.hasAdminRight(author)
+	if err != nil {
+		return core.Error(core.DbError, "cannot get access for author %s: %s", author, err.Error(), err)
+	}
 	if !adminRight {
-		access, err := v.GetAccess(author)
-		if err != nil && err != sqlx.ErrNoRows {
-			return core.Error(core.DbError, "cannot get access for author %s", author, err)
-		}
-		adminRight = access&Admin != 0
+		return core.Error(core.AuthError, "author %s does not have admin rights to change access in vault %s", author, v.ID)
 	}
 
-	if adminRight {
-		if c.Access == 0 {
-			// Remove user if access is zero
-			err := v.removeUser(c.PublicID)
-			if err != nil {
-				return core.Error(core.FileError, "cannot remove user %s from vault %s", c.PublicID, v.ID, err)
-			}
-			if v.UserID == c.PublicID {
-				core.Info("my access to vault %s removed", v.ID)
-			}
-		} else {
-			// Set user access
-			err := v.setUser(c.PublicID, c.Access)
-			if err != nil {
-				return core.Error(core.DbError, "cannot set user %s access for vault %s", c.PublicID, v.ID, err)
-			}
-			if v.UserID == c.PublicID {
-				core.Info("my access for vault %s changed to %s", v.ID, AccessLabels[c.Access])
-			}
+	if c.Access == 0 {
+		// Remove user if access is zero
+		err := v.removeUser(c.PublicID)
+		if err != nil {
+			return core.Error(core.FileError, "cannot remove user %s from vault %s", c.PublicID, v.ID, err)
+		}
+		if v.UserID == c.PublicID {
+			core.Info("my access to vault %s removed", v.ID)
 		}
 	} else {
-		core.Info("author %s does not have admin rights to change access in vault %s", author, v.ID)
+		// Set user access
+		err := v.setUser(c.PublicID, c.Access)
+		if err != nil {
+			return core.Error(core.DbError, "cannot set user %s access for vault %s", c.PublicID, v.ID, err)
+		}
+		if v.UserID == c.PublicID {
+			core.Info("my access for vault %s changed to %s", v.ID, AccessLabels[c.Access])
+		}
 	}
 	core.End("handled access change for vault %s to %s: id %s", v.ID, AccessLabels[c.Access],
 		c.PublicID)
 	return nil
+}
+
+func (v *Vault) hasAdminRight(author security.PublicID) (bool, error) {
+	if author == v.Author {
+		return true, nil
+	}
+	access, err := v.GetAccess(author)
+	if err != nil {
+		return false, err
+	}
+	return access&Admin != 0, nil
 }
 
 func (ca ChangeAccess) String() string {

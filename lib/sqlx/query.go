@@ -133,10 +133,18 @@ func (db *DB) QueryRow(key string, m Args, dest ...any) error {
 	err = row.Err()
 	db.trace(key, m, err)
 	if err != s.ErrNoRows && err != nil {
-		return core.Error(core.DbError, "cannot execute query", err)
+		core.Info("QueryRow failure key=%s sql=%q args=%v errType=%T errRaw=%q", key, db.queries[key], m, err, err.Error())
+		return core.Error(core.DbError, "cannot execute query key=%s: %s", key, err.Error(), err)
 	}
-
-	return scanRow(row, dest...)
+	err = scanRow(row, dest...)
+	if err != nil {
+		if err == s.ErrNoRows {
+			return s.ErrNoRows
+		}
+		core.Info("QueryRow scan failure key=%s sql=%q args=%v errType=%T errRaw=%q", key, db.queries[key], m, err, err.Error())
+		return core.Error(core.DbError, "cannot scan query row key=%s: %s", key, err.Error(), err)
+	}
+	return nil
 }
 
 // Query executes a SQL query identified by the key with the provided arguments.
@@ -293,7 +301,7 @@ func (rw *RowsX) Scan(dest ...interface{}) (err error) {
 
 	err = rw.rows.Scan(dest...)
 	if err != nil {
-		return core.Error(core.GenericError, "cannot scan row", err)
+		return core.Error(core.GenericError, "cannot scan row: %s (dest=%d cols=%d)", err.Error(), len(dest), len(rw.columnTypes), err)
 	}
 	return nil
 }

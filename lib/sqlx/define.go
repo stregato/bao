@@ -11,15 +11,15 @@ import (
 
 func (db *DB) ensureVersionsTable() (map[float64]bool, error) {
 	// Check if the versions table exists by querying sqlite_master
-	var exists bool
-	err := db.Engine.QueryRow(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='versions'`).Scan(&exists)
-	if err == sql.ErrNoRows {
+	var one int
+	err := db.Engine.QueryRow(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='versions'`).Scan(&one)
+	if err == sql.ErrNoRows || (err != nil && strings.Contains(strings.ToLower(err.Error()), "no rows")) {
 		_, err = db.Engine.Exec(`CREATE TABLE versions (version REAL PRIMARY KEY)`)
 		if err != nil {
-			return nil, core.Error(core.DbError, "cannot create versions table", err)
+			return nil, core.Error(core.DbError, "cannot create versions table: %v", err, err)
 		}
 	} else if err != nil && err != sql.ErrNoRows {
-		return nil, core.Error(core.DbError, "cannot check versions table", err)
+		return nil, core.Error(core.DbError, "cannot check versions table: %v", err, err)
 	}
 	rows, err := db.Engine.Query(`SELECT version FROM versions`)
 	if err != nil {
@@ -170,7 +170,7 @@ func (db *DB) getQuery(sql string, args Args) (string, error) {
 	}
 
 	if strings.HasPrefix(sql, "SQL:") {
-		sql = strings.TrimLeft(sql, "SQL:")
+		sql = strings.TrimPrefix(sql, "SQL:")
 		core.Trace("SQL query retrieved directly")
 		return sql, nil
 	} else {

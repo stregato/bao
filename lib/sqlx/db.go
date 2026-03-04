@@ -56,7 +56,7 @@ func Open(driverName, dataSourceName, ddl string) (*DB, error) {
 	if ddl != "" {
 		err = d.Define(ddl)
 		if err != nil {
-			return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", dataSourceName, err)
+			return nil, core.Error(core.DbError, "Cannot define SQLite db in %s: %v", dataSourceName, err, err)
 		}
 	}
 

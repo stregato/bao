@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"path"
+	"runtime"
 	"sync"
 	"time"
 
@@ -23,7 +24,7 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 	core.Start("opening vault with store URL %s", store.ID())
 	err := db.Define(ddl1_0)
 	if err != nil {
-		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s", db.DbPath, err)
+		return nil, core.Error(core.DbError, "Cannot define SQLite db in %s: %v", db.DbPath, err, err)
 	}
 
 	userID, err := userSecret.PublicID()
@@ -65,7 +66,7 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 	}
 	allocatedSize, err := v.calculateAllocatedSize()
 	if err != nil {
-		return nil, core.Error(core.GenericError, "cannot calculate allocated size for vault %s", id, err)
+		return nil, core.Error(core.GenericError, "cannot calculate allocated size for vault %s: %v", id, err, err)
 	}
 	v.allocatedSize = allocatedSize
 
@@ -86,7 +87,11 @@ func Open(userSecret security.PrivateID, author security.PublicID, store store.S
 	} else {
 		defer v.syncBlockChain(false)
 	}
-	v.startSyncRelay()
+	if runtime.GOOS != "js" {
+		v.startSyncRelay()
+	} else {
+		core.Info("sync relay disabled for js runtime")
+	}
 	v.startHousekeeping()
 
 	core.Info("successfully opened vault %s", v.ID)

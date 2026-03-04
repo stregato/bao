@@ -21,6 +21,7 @@ func TestEncodeDecodeHead(t *testing.T) {
 		Name:      "test.txt",
 		Size:      1024,
 		ModTime:   now,
+		ExpiresAt: truncateToSecond(now.Add(90 * time.Minute)),
 		IsDir:     false,
 		Flags:     PendingWrite,
 		Attrs:     attrs,
@@ -52,5 +53,17 @@ func TestEncodeDecodeHead(t *testing.T) {
 	core.Assert(t, file.AllocatedSize == 1024, "unexpected allocated size: %d", file.AllocatedSize)
 	core.Assert(t, file.AuthorId == alice.PublicIDMust(), "unexpected author id: %s", file.AuthorId)
 	core.Assert(t, file.ModTime.Sub(now) < time.Second, "unexpected mod time: %s", file.ModTime)
+	core.Assert(t, file.ExpiresAt.Equal(truncateToSecond(now.Add(90*time.Minute))), "unexpected expiresAt: %s", file.ExpiresAt)
 	core.Assert(t, string(file.Attrs) == string(attrs), "unexpected attrs: %s", file.Attrs)
+
+	// Expiration is stored in the clear header prefix, so it is available even when
+	// this user cannot decrypt the payload.
+	notForMeFile, notForMe, _, err := decodeHead(head, alice, func(keyId uint64) (security.AESKey, error) {
+		return nil, core.Error(core.AccessDenied, "no access to key")
+	}, func(shortId uint64) (security.PublicID, error) {
+		return alice.PublicIDMust(), nil
+	})
+	core.TestErr(t, err, "cannot decode not-for-me head: %v")
+	core.Assert(t, notForMe, "expected file to be not-for-me")
+	core.Assert(t, notForMeFile.ExpiresAt.Equal(truncateToSecond(now.Add(90*time.Minute))), "unexpected not-for-me expiresAt: %s", notForMeFile.ExpiresAt)
 }
