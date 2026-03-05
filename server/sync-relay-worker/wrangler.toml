@@ -1,0 +1,11 @@
+name = "sync-relay-server"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[[durable_objects.bindings]]
+name = "SYNC_RELAY_ROOM"
+class_name = "SyncRelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncRelayRoom"]
